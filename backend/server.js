@@ -168,6 +168,9 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 8080;
 
 async function start() {
+  // Log before awaiting: connection can take up to serverSelectionTimeoutMS,
+  // and a silent await makes startup failures look like a hang.
+  console.log('⏳ Connecting to MongoDB…');
   await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/landing-builder');
   console.log('✅ MongoDB connected');
 

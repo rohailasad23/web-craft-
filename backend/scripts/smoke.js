@@ -56,7 +56,12 @@ function startServer() {
     server = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: 'pipe' });
     let output = '';
 
-    const timer = setTimeout(() => reject(new Error(`Server did not start in time.\n${output}`)), 30000);
+    const timer = setTimeout(
+      // Must comfortably exceed Mongoose's 30s serverSelectionTimeoutMS,
+      // otherwise a slow-but-valid connect is misreported as "did not start".
+      () => reject(new Error(`Server did not start in time.\n--- server output ---\n${output}`)),
+      90_000
+    );
 
     server.stdout.on('data', (chunk) => {
       output += chunk;
@@ -71,7 +76,8 @@ function startServer() {
 }
 
 async function waitForHealth() {
-  for (let i = 0; i < 20; i++) {
+  // Generous budget: the server only starts listening once Mongo connects.
+  for (let i = 0; i < 60; i++) {
     try {
       const res = await fetch(`${BASE}/health`);
       if (res.ok) return res.json();
