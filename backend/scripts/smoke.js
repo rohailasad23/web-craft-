@@ -13,18 +13,37 @@
 
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const net = require('node:net');
 
-const PORT = process.env.SMOKE_PORT || 8099;
-const BASE = `http://localhost:${PORT}`;
 const ROOT = path.resolve(__dirname, '..');
+
+// SMOKE_PORT pins a port; otherwise one is discovered at runtime so a stale
+// listener left behind by an earlier (crashed) run cannot break the suite.
+let PORT = process.env.SMOKE_PORT ? Number(process.env.SMOKE_PORT) : 0;
+let BASE = '';
+
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.unref();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+function buildEnv() {
+  const env = { ...process.env, PORT: String(PORT), NODE_ENV: 'test' };
+  // Only override when explicitly provided; otherwise backend/.env supplies it.
+  if (process.env.MONGODB_URI) env.MONGODB_URI = process.env.MONGODB_URI;
+  return env;
+}
 
 const results = [];
 let server;
 let failures = 0;
-
-const env = { ...process.env, PORT: String(PORT), NODE_ENV: 'test' };
-// Only override when explicitly provided; otherwise backend/.env supplies it.
-if (process.env.MONGODB_URI) env.MONGODB_URI = process.env.MONGODB_URI;
 
 async function request(method, urlPath, { body, token, expect = [200] } = {}) {
   const headers = { 'content-type': 'application/json' };
@@ -53,25 +72,49 @@ function check(name, condition, detail = '') {
 
 function startServer() {
   return new Promise((resolve, reject) => {
-    server = spawn(process.execPath, ['server.js'], { cwd: ROOT, env, stdio: 'pipe' });
+    server = spawn(process.execPath, ['server.js'], { cwd: ROOT, env: buildEnv(), stdio: 'pipe' });
     let output = '';
+    let settled = false;
 
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn(value);
+    };
+
+    // Generous overall budget: Mongo can take up to its 30s selection
+    // timeout before the server starts listening.
     const timer = setTimeout(
-      // Must comfortably exceed Mongoose's 30s serverSelectionTimeoutMS,
-      // otherwise a slow-but-valid connect is misreported as "did not start".
-      () => reject(new Error(`Server did not start in time.\n--- server output ---\n${output}`)),
+      () => finish(reject, new Error(`Server did not start in time.\n--- server output ---\n${output}`)),
       90_000
     );
 
+    // Fail fast on a startup crash instead of burning the whole timeout.
+    const fatal = /EADDRINUSE|FATAL ERROR|Error: listen|Invalid configuration/;
+    const checkFatal = () => {
+      if (fatal.test(output)) {
+        finish(reject, new Error(`Server crashed on startup.\n--- server output ---\n${output}`));
+      }
+    };
+
     server.stdout.on('data', (chunk) => {
       output += chunk;
-      if (output.includes('Server running')) {
-        clearTimeout(timer);
-        resolve();
+      if (output.includes('Server running')) finish(resolve, undefined);
+      else checkFatal();
+    });
+
+    server.stderr.on('data', (chunk) => {
+      output += chunk;
+      checkFatal();
+    });
+
+    server.on('error', (err) => finish(reject, err));
+    server.on('exit', (code) => {
+      if (code !== 0 && code !== null) {
+        finish(reject, new Error(`Server exited with code ${code}.\n--- server output ---\n${output}`));
       }
     });
-    server.stderr.on('data', (chunk) => (output += chunk));
-    server.on('error', reject);
   });
 }
 
@@ -90,7 +133,10 @@ async function waitForHealth() {
 }
 
 async function run() {
-  console.log('🚀 Starting server...\n');
+  if (!PORT) PORT = await getFreePort();
+  BASE = `http://localhost:${PORT}`;
+  console.log(`🚀 Starting server on port ${PORT}...\n`);
+
   await startServer();
   const health = await waitForHealth();
   check('Server starts', true);
