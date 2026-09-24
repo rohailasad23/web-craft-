@@ -12,6 +12,7 @@ dotenv.config();
 
 const { requireSecret } = require('./utils/secrets');
 const asyncHandler = require('./middleware/asyncHandler');
+const { connectDB, disconnectDB } = require('./services/database');
 const LandingPage = require('./models/LandingPage');
 
 // ===== FAIL FAST ON BAD CONFIGURATION =====
@@ -170,9 +171,10 @@ const PORT = process.env.PORT || 8080;
 async function start() {
   // Log before awaiting: connection can take up to serverSelectionTimeoutMS,
   // and a silent await makes startup failures look like a hang.
-  console.log('⏳ Connecting to MongoDB…');
-  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/landing-builder');
-  console.log('✅ MongoDB connected');
+  // connectDB() picks Atlas or a local mongod based on DB_MODE -- see
+  // services/database.js.
+  const backend = await connectDB();
+  console.log(`🗄  Database backend: ${backend}`);
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
@@ -182,10 +184,17 @@ async function start() {
 
 if (require.main === module) {
   start().catch((err) => {
-    console.error('❌ MongoDB connection failed:', err.message);
-    console.error('   Check MONGODB_URI in backend/.env');
+    console.error('❌ Database connection failed:', err.message);
+    console.error('   Check DB_MODE / MONGODB_URI in backend/.env');
     process.exit(1);
   });
+
+  // Release the port (and the embedded mongod) on Ctrl+C.
+  const shutdown = () => {
+    disconnectDB().finally(() => process.exit(0));
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 module.exports = app;

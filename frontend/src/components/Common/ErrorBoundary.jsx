@@ -30,17 +30,20 @@ export default class ErrorBoundary extends React.Component {
     if (!this.state.error) return this.props.children;
 
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow p-8 text-center">
-          <div className="text-4xl mb-4">⚠️</div>
-          <h1 className="text-xl font-bold mb-2">Something went wrong</h1>
-          <p className="text-gray-600 text-sm mb-6 break-words">
-            {String(this.state.error?.message || this.state.error)}
+      <div className="min-h-screen flex items-center justify-center bg-ink-50 px-4">
+        <div className="ui-card animate-pop-in max-w-md w-full p-8 text-center">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-red-50 text-3xl animate-wiggle">
+            ⚠️
+          </div>
+          <h1 className="ui-title mt-5 text-xl">Something went wrong</h1>
+          <p className="mt-2 text-sm leading-relaxed text-ink-500 break-words">
+            The app hit an unexpected error. Resetting clears the saved session, which fixes this
+            in most cases.
           </p>
-          <button
-            onClick={this.handleReset}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
-          >
+          <div className="mt-4 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-left font-mono text-xs text-red-700 break-words">
+            {String(this.state.error?.message || this.state.error)}
+          </div>
+          <button onClick={this.handleReset} className="ui-btn ui-btn--primary ui-btn--block mt-6">
             Reset app
           </button>
         </div>

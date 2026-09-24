@@ -72,39 +72,81 @@ export default function Toolbar({ lpData, updateColors, saving }) {
   };
 
   return (
-    <div className="bg-white border-b px-6 py-3 flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <span className="font-semibold">{lpData?.businessName}</span>
-        {saving && <span className="text-xs text-gray-400">Saving…</span>}
-        {!saving && <span className="text-xs text-green-600">Saved</span>}
+    <header className="sticky top-0 z-30 flex items-center justify-between gap-4 border-b border-ink-100 bg-white/90 px-4 py-2.5 backdrop-blur-md animate-slide-down sm:px-6">
+      {/* Left: identity + save state */}
+      <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={() => navigate('/dashboard')}
+          className="ui-btn ui-btn--ghost !px-2.5 !py-1.5 text-sm"
+          title="Back to dashboard"
+        >
+          ←
+        </button>
+
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-sm shadow-soft">
+          ⚡
+        </span>
+
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold leading-tight tracking-tight" title={lpData?.businessName}>
+            {lpData?.businessName || 'Untitled page'}
+          </p>
+
+          <div className="flex items-center gap-1.5 text-[11px] leading-tight">
+            {saving ? (
+              <>
+                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-amber-500" />
+                <span className="text-amber-600">Saving…</span>
+              </>
+            ) : (
+              <>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,.9)]" />
+                <span className="text-emerald-600">All changes saved</span>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-gray-600">
+      {/* Right: controls */}
+      <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+        <label
+          className="group flex cursor-pointer items-center gap-2 rounded-xl border border-ink-200 bg-white px-2.5 py-1.5 transition-all duration-300 hover:border-brand-300 hover:shadow-soft"
+          title="Change primary colour"
+        >
           <span className="sr-only">Primary colour</span>
+          <span className="text-xs font-medium text-ink-500 transition-colors group-hover:text-ink-700">
+            Colour
+          </span>
+          <span
+            className="h-6 w-6 rounded-lg ring-1 ring-black/10 transition-transform duration-300 group-hover:scale-110"
+            style={{ backgroundColor: lpData?.colorScheme || '#3B82F6' }}
+          />
           <input
             type="color"
             aria-label="Primary colour"
             value={lpData?.colorScheme || '#3B82F6'}
             onChange={(e) => updateColors(e.target.value)}
-            className="w-10 h-8 border rounded cursor-pointer"
+            className="h-0 w-0 opacity-0 absolute"
           />
         </label>
 
         {lpData?.paymentStatus === 'paid' ? (
-          <span className="text-xs bg-green-100 text-green-700 px-3 py-2 rounded-lg">
-            Payment received
+          <span className="ui-badge ring-1 bg-emerald-100 text-emerald-700 ring-emerald-200">
+            ✓ Payment received
           </span>
         ) : (
           <button
             onClick={handlePayAndPublish}
             disabled={publishing}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700 disabled:bg-gray-400"
+            className="ui-btn ui-btn--success !px-4 !py-2 text-sm"
           >
-            {publishing ? 'Working…' : `Pay ₹${lpData?.amount || 1500} & Publish`}
+            {publishing && <span className="ui-spinner" aria-hidden />}
+            {publishing ? 'Processing…' : `Pay ₹${lpData?.amount || 1500} & Publish`}
           </button>
         )}
       </div>
-    </div>
+    </header>
   );
 }

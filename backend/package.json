@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "warmup-db": "node scripts/warmup-db.js"
   },
   "dependencies": {
     "axios": "^1.20.0",
@@ -17,10 +18,12 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
+    "landing-page-builder": "file:..",
     "mongoose": "^9.10.2",
     "razorpay": "^2.9.8"
   },
   "devDependencies": {
+    "mongodb-memory-server": "^11.3.0",
     "nodemon": "^3.1.14"
   }
 }

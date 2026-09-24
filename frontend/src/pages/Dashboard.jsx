@@ -3,10 +3,17 @@ import { Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 
 const STATUS_STYLES = {
-  published: 'bg-green-100 text-green-700',
-  draft: 'bg-yellow-100 text-yellow-700',
-  ready: 'bg-blue-100 text-blue-700',
-  archived: 'bg-gray-100 text-gray-700',
+  published: 'bg-emerald-100 text-emerald-700 ring-emerald-200',
+  draft: 'bg-amber-100 text-amber-700 ring-amber-200',
+  ready: 'bg-brand-100 text-brand-700 ring-brand-200',
+  archived: 'bg-slate-100 text-slate-600 ring-slate-200',
+};
+
+const formatDate = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 export default function Dashboard() {
@@ -52,87 +59,161 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold">Your Landing Pages</h1>
-        <Link
-          to="/generate"
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700"
-        >
-          + New Page
+    <div className="mx-auto max-w-6xl px-5 py-8 sm:px-6 sm:py-10">
+      {/* ---------- Header ---------- */}
+      <div className="animate-fade-up flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <span className="ui-eyebrow">Workspace</span>
+          <h1 className="ui-title mt-2 text-3xl sm:text-4xl">Your landing pages</h1>
+          {!loading && !error && (
+            <p className="mt-2 text-sm text-ink-500">
+              {pages.length === 0
+                ? 'Nothing here yet — create your first page below.'
+                : `${pages.length} page${pages.length === 1 ? '' : 's'} in your workspace.`}
+            </p>
+          )}
+        </div>
+
+        <Link to="/generate" className="ui-btn ui-btn--primary group">
+          <span aria-hidden className="transition-transform duration-300 group-hover:rotate-90">
+            ＋
+          </span>
+          New Page
         </Link>
       </div>
 
-      {loading && <p>Loading...</p>}
-      {error && (
-        <div className="mb-6 flex items-center justify-between bg-red-50 text-red-700 px-4 py-3 rounded-lg">
-          <span>{error}</span>
-          <button onClick={() => fetchPages({ showLoading: true })} className="underline text-sm ml-4">
+      {/* ---------- Loading skeleton ---------- */}
+      {loading && (
+        <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3" aria-hidden>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="ui-card animate-fade-in p-5" style={{ animationDelay: `${i * 60}ms` }}>
+              <div className="ui-skeleton h-5 w-2/3" />
+              <div className="ui-skeleton mt-3 h-3 w-1/3" />
+              <div className="mt-5 flex gap-2">
+                <div className="ui-skeleton h-6 w-20 rounded-full" />
+                <div className="ui-skeleton h-6 w-16 rounded-full" />
+              </div>
+              <div className="ui-skeleton mt-5 h-9 w-full rounded-lg" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ---------- Error ---------- */}
+      {!loading && error && (
+        <div role="alert" className="ui-alert ui-alert--error mt-8 justify-between">
+          <span className="flex items-start gap-2">
+            <span aria-hidden>⚠️</span>
+            <span>{error}</span>
+          </span>
+          <button
+            onClick={() => fetchPages({ showLoading: true })}
+            className="ui-btn ui-btn--ghost shrink-0 !border-red-200 !bg-white !text-red-600 !py-1.5 !px-3 text-sm"
+          >
             Retry
           </button>
         </div>
       )}
 
+      {/* ---------- Empty state ---------- */}
       {!loading && !error && pages.length === 0 && (
-        <div className="text-center py-20 bg-white rounded-lg shadow">
-          <p className="text-gray-500 mb-4">No landing pages yet.</p>
-          <Link to="/generate" className="text-blue-600 font-semibold">
-            Generate your first one →
+        <div className="animate-pop-in mt-10 overflow-hidden rounded-3xl border border-dashed border-brand-200 bg-white px-6 py-16 text-center">
+          <div className="mx-auto grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-brand-50 to-purple-100 text-4xl shadow-soft animate-float">
+            🚀
+          </div>
+          <h2 className="ui-title mt-6 text-2xl">No landing pages yet</h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-500">
+            Describe your business and AI will draft a complete page you can edit and publish in
+            under a minute.
+          </p>
+          <Link to="/generate" className="ui-btn ui-btn--primary ui-btn--lg mt-7 group">
+            Generate your first page
+            <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
           </Link>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {pages.map((page) => (
-          <div key={page._id} className="bg-white rounded-lg shadow p-5 flex flex-col">
-            <h3 className="font-bold text-lg mb-1">{page.businessName}</h3>
-            <p className="text-sm text-gray-500 mb-3 capitalize">{page.businessType}</p>
+      {/* ---------- Cards ---------- */}
+      {!loading && !error && pages.length > 0 && (
+        <div className="stagger mt-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {pages.map((page) => {
+            const created = formatDate(page.createdAt);
+            return (
+              <article key={page._id} className="ui-card ui-card--hover group flex flex-col p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-base font-extrabold text-white shadow-soft transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110">
+                      {(page.businessName || '?').trim().charAt(0).toUpperCase()}
+                    </div>
+                  </div>
+                  <span
+                    className={`ui-badge ring-1 capitalize ${
+                      STATUS_STYLES[page.status] || STATUS_STYLES.draft
+                    }`}
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    {page.status}
+                  </span>
+                </div>
 
-            <div className="flex items-center justify-between text-sm mb-4 gap-2">
-              <span
-                className={`px-2 py-1 rounded-full text-xs capitalize ${
-                  STATUS_STYLES[page.status] || STATUS_STYLES.draft
-                }`}
-              >
-                {page.status}
-              </span>
-              <span
-                className={`px-2 py-1 rounded-full text-xs capitalize ${
-                  page.paymentStatus === 'paid'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                {page.paymentStatus}
-              </span>
-            </div>
+                <h3 className="mt-4 truncate text-lg font-bold tracking-tight" title={page.businessName}>
+                  {page.businessName}
+                </h3>
+                <p className="mt-0.5 truncate text-sm capitalize text-ink-500" title={page.businessType}>
+                  {page.businessType}
+                </p>
 
-            {page.publicUrl && (
-              <a
-                href={page.publicUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-green-700 text-sm font-semibold mb-2 hover:underline"
-              >
-                View live page →
-              </a>
-            )}
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                  <span
+                    className={`ui-badge ring-1 capitalize ${
+                      page.paymentStatus === 'paid'
+                        ? 'bg-emerald-100 text-emerald-700 ring-emerald-200'
+                        : 'bg-slate-100 text-slate-600 ring-slate-200'
+                    }`}
+                  >
+                    💳 {page.paymentStatus}
+                  </span>
+                  {created && <span className="text-ink-500">· {created}</span>}
+                </div>
 
-            <div className="mt-auto pt-3 flex items-center justify-between">
-              <Link to={`/editor/${page._id}`} className="text-blue-600 text-sm font-semibold">
-                Open Editor →
-              </Link>
-              <button
-                onClick={() => handleDelete(page)}
-                disabled={deletingId === page._id}
-                className="text-red-500 text-sm hover:underline disabled:opacity-50"
-              >
-                {deletingId === page._id ? 'Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
+                {page.publicUrl && (
+                  <a
+                    href={page.publicUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-600 transition-colors hover:text-emerald-700"
+                  >
+                    View live page
+                    <span className="transition-transform duration-300 group-hover:translate-x-1">↗</span>
+                  </a>
+                )}
+
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-ink-100 pt-4">
+                  <Link
+                    to={`/editor/${page._id}`}
+                    className="ui-btn ui-btn--soft !px-3 !py-1.5 text-sm"
+                  >
+                    Open Editor →
+                  </Link>
+                  <button
+                    onClick={() => handleDelete(page)}
+                    disabled={deletingId === page._id}
+                    className="ui-btn !px-3 !py-1.5 text-sm !text-slate-400 transition-all hover:!bg-red-50 hover:!text-red-600 disabled:opacity-50"
+                    type="button"
+                  >
+                    {deletingId === page._id ? (
+                      <span className="ui-spinner" aria-hidden />
+                    ) : (
+                      <span aria-hidden>🗑</span>
+                    )}
+                    {deletingId === page._id ? 'Deleting…' : ''}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

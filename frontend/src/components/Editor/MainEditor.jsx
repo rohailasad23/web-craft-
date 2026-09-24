@@ -175,19 +175,50 @@ export default function MainEditor() {
   }, [fetchLandingPage]);
 
   if (loading) {
-    return <div className="flex items-center justify-center h-screen">Loading editor…</div>;
+    return (
+      <div className="relative flex h-screen flex-col bg-ink-50">
+        <div className="flex items-center gap-3 border-b border-ink-100 bg-white px-6 py-3">
+          <div className="ui-skeleton h-8 w-8 rounded-lg" />
+          <div className="ui-skeleton h-4 w-40" />
+          <div className="ml-auto ui-skeleton h-8 w-32 rounded-lg" />
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="hidden w-60 shrink-0 border-r border-ink-100 bg-white p-3 sm:block">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="ui-skeleton mb-2 h-14 rounded-xl" />
+            ))}
+          </div>
+          <div className="flex-1 p-8">
+            <div className="mx-auto max-w-3xl">
+              <div className="ui-skeleton h-64 rounded-2xl" />
+              <div className="ui-skeleton mt-5 h-40 rounded-2xl" />
+            </div>
+          </div>
+        </div>
+        <div className="ui-alert ui-alert--info absolute bottom-6 left-1/2 -translate-x-1/2">
+          <span className="ui-spinner" aria-hidden />
+          <span>Loading editor…</span>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen text-center px-4">
-        <p className="text-red-600 mb-4">{error}</p>
-        <button
-          onClick={() => fetchLandingPage({ showLoading: true })}
-          className="text-blue-600 underline"
-        >
-          Try again
-        </button>
+      <div className="flex h-screen flex-col items-center justify-center bg-ink-50 px-4 text-center">
+        <div className="ui-card animate-pop-in max-w-sm p-8">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-red-50 text-3xl animate-wiggle">
+            🚫
+          </div>
+          <h1 className="ui-title mt-5 text-xl">Couldn&apos;t open the editor</h1>
+          <p className="mt-2 text-sm leading-relaxed text-ink-500">{error}</p>
+          <button
+            onClick={() => fetchLandingPage({ showLoading: true })}
+            className="ui-btn ui-btn--primary mt-6"
+          >
+            Try again
+          </button>
+        </div>
       </div>
     );
   }
@@ -195,19 +226,25 @@ export default function MainEditor() {
   if (!lpData) return null;
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100">
+    <div className="flex h-screen flex-col bg-ink-50">
       <Toolbar lpData={lpData} updateColors={updateColors} saving={saving} />
 
       {saveError && (
-        <div className="bg-red-50 text-red-700 text-sm px-6 py-2 flex items-center justify-between">
-          <span>⚠️ {saveError}</span>
+        <div
+          role="alert"
+          className="flex animate-slide-down items-center justify-between gap-4 border-b border-red-200 bg-red-50 px-5 py-2.5 text-sm text-red-700"
+        >
+          <span className="flex items-center gap-2">
+            <span aria-hidden>⚠️</span>
+            <span>{saveError}</span>
+          </span>
           <button
             type="button"
-            className="underline ml-4"
             onClick={() => {
               Object.keys(queueRef.current).forEach((sectionId) => flushRef.current(sectionId));
               setSaveError('');
             }}
+            className="ui-btn ui-btn--ghost shrink-0 !border-red-200 !bg-white !py-1 !px-3 text-xs !text-red-600"
           >
             Retry
           </button>

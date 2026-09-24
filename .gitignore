@@ -28,9 +28,15 @@ lerna-debug.log*
 out.txt
 *.out.txt
 
+# Local MongoDB data (created by DB_MODE=auto/local) — never commit a database
+.data/
+backend/.data/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
 .idea/
 .DS_Store
 Thumbs.db

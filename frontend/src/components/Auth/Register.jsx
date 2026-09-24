@@ -40,39 +40,158 @@ export default function Register({ onAuth }) {
   };
 
   return (
-    <div className="max-w-md mx-auto mt-20 px-4">
-      <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow">
-        <h1 className="text-2xl font-bold mb-6">Create Account</h1>
-        {error && (
-          <p role="alert" className="text-red-600 text-sm mb-4">
-            {error}
+    <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center px-4 py-12 sm:px-6">
+      {/* backdrop */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -left-32 bottom-10 h-96 w-96 rounded-full bg-purple-300/40 blur-3xl animate-float" />
+        <div className="absolute -right-24 top-0 h-80 w-80 rounded-full bg-brand-300/40 blur-3xl animate-float-slow" />
+      </div>
+
+      <div className="relative grid w-full gap-8 lg:grid-cols-2 lg:items-center">
+        {/* Brand panel */}
+        <div className="hidden lg:block animate-slide-right">
+          <Link to="/" className="inline-flex items-center gap-2.5">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-lg shadow-soft">
+              ⚡
+            </span>
+            <span className="text-lg font-extrabold tracking-tight">LP Builder</span>
+          </Link>
+
+          <h1 className="ui-title mt-8 text-4xl xl:text-5xl">
+            Build your first
+            <br />
+            <span className="bg-gradient-to-r from-brand-500 to-purple-600 bg-clip-text text-transparent">
+              page in 60 seconds.
+            </span>
+          </h1>
+          <p className="mt-4 max-w-md text-ink-500">
+            One description in, a complete editable landing page out. No design tools, no
+            developer, no waiting.
           </p>
-        )}
-        <input
-          type="text" placeholder="Name" required autoComplete="name"
-          className="w-full px-4 py-2 border rounded mb-4"
-          value={form.name} onChange={update('name')} />
-        <input
-          type="email" placeholder="Email" required autoComplete="email"
-          className="w-full px-4 py-2 border rounded mb-4"
-          value={form.email} onChange={update('email')} />
-        <input
-          type="password" placeholder="Password (min 6 chars)" required autoComplete="new-password"
-          className="w-full px-4 py-2 border rounded mb-4"
-          value={form.password} onChange={update('password')} />
-        <input
-          type="password" placeholder="Confirm Password" required autoComplete="new-password"
-          className="w-full px-4 py-2 border rounded mb-6"
-          value={form.confirmPassword} onChange={update('confirmPassword')} />
-        <button
-          type="submit" disabled={loading}
-          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400">
-          {loading ? 'Creating account...' : 'Register'}
-        </button>
-        <p className="text-sm text-center mt-4">
-          Already have an account? <Link to="/login" className="text-blue-600">Login</Link>
-        </p>
-      </form>
+
+          <div className="mt-8 grid max-w-md grid-cols-3 gap-3">
+            {[
+              ['⚡', 'Instant draft'],
+              ['🎨', 'Fully editable'],
+              ['🚀', 'One-click publish'],
+            ].map(([icon, label]) => (
+              <div
+                key={label}
+                className="ui-card ui-card--hover !rounded-xl p-3.5 text-center transition-all duration-300 hover:!-translate-y-1"
+              >
+                <div className="text-xl">{icon}</div>
+                <div className="mt-1.5 text-xs font-semibold text-ink-700">{label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="ui-card animate-pop-in w-full max-w-md p-7 sm:p-9 lg:justify-self-end">
+          <div className="lg:hidden mb-5">
+            <Link to="/" className="inline-flex items-center gap-2">
+              <span className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-soft">
+                ⚡
+              </span>
+              <span className="text-base font-extrabold tracking-tight">LP Builder</span>
+            </Link>
+          </div>
+
+          <span className="ui-eyebrow">Get started</span>
+          <h2 className="ui-title mt-2 text-2xl">Create your account</h2>
+          <p className="mt-1.5 text-sm text-ink-500">Free forever — no credit card needed.</p>
+
+          {error && (
+            <div role="alert" className="ui-alert ui-alert--error mt-5">
+              <span aria-hidden>⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="stagger mt-6 space-y-4">
+            <div>
+              <label htmlFor="reg-name" className="ui-label">
+                Name
+              </label>
+              <input
+                id="reg-name"
+                type="text"
+                placeholder="Your name"
+                required
+                autoComplete="name"
+                className="ui-input"
+                value={form.name}
+                onChange={update('name')}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="reg-email" className="ui-label">
+                Email
+              </label>
+              <input
+                id="reg-email"
+                type="email"
+                placeholder="you@company.com"
+                required
+                autoComplete="email"
+                className="ui-input"
+                value={form.email}
+                onChange={update('email')}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="reg-password" className="ui-label">
+                Password
+              </label>
+              <input
+                id="reg-password"
+                type="password"
+                placeholder="At least 6 characters"
+                required
+                autoComplete="new-password"
+                minLength={6}
+                className="ui-input"
+                value={form.password}
+                onChange={update('password')}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="reg-confirm" className="ui-label">
+                Confirm password
+              </label>
+              <input
+                id="reg-confirm"
+                type="password"
+                placeholder="Repeat your password"
+                required
+                autoComplete="new-password"
+                className="ui-input"
+                value={form.confirmPassword}
+                onChange={update('confirmPassword')}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="ui-btn ui-btn--primary ui-btn--block ui-btn--lg mt-6"
+          >
+            {loading && <span className="ui-spinner" aria-hidden />}
+            {loading ? 'Creating account…' : 'Register'}
+          </button>
+
+          <p className="mt-6 text-center text-sm text-ink-500">
+            Already have an account?{' '}
+            <Link to="/login" className="font-semibold text-brand-600 hover:text-brand-700 transition-colors">
+              Login
+            </Link>
+          </p>
+        </form>
+      </div>
     </div>
   );
 }

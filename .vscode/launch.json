@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: debug API",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/server.js",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/backend",
+      "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/backend/.env"
+    },
+    {
+      "name": "Backend: smoke test (31 checks)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/backend/scripts/smoke.js",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env"
+    }
+  ]
+}
