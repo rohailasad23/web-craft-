@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
 
@@ -8,14 +8,26 @@ export default function Login({ onAuth }) {
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const mounted = useRef(true);
+
+  // StrictMode mounts, unmounts and mounts again in dev, so the flag has
+  // to be claimed on mount -- not only released on cleanup -- otherwise
+  // the success redirect below would never fire.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (loading) return;
+    if (loading || done) return;
 
     if (!form.email.trim() || !form.password) {
       setError('Please fill in both fields');
@@ -31,12 +43,18 @@ export default function Login({ onAuth }) {
       localStorage.setItem('user', JSON.stringify(res.data.user));
       onAuth?.(res.data.user, res.data.token);
 
+      // Normal -> Loading -> Success (anim guide §17): let the green
+      // confirmation land for a beat before we navigate away.
+      setLoading(false);
+      setDone(true);
+
       // Go wherever the link intended; fall back to the dashboard.
       const next = location.state?.from?.pathname || '/dashboard';
-      navigate(next, { replace: true });
+      window.setTimeout(() => {
+        if (mounted.current) navigate(next, { replace: true });
+      }, 420);
     } catch (err) {
       setError(getErrorMessage(err, 'Login failed'));
-    } finally {
       setLoading(false);
     }
   };
@@ -108,14 +126,30 @@ export default function Login({ onAuth }) {
           </div>
         </div>
 
-        <button type="submit" disabled={loading} className="ui-btn ui-btn--primary ui-btn--block ui-btn--lg">
-          {loading ? (
-            <>
-              <span className="ui-spinner" aria-hidden /> Signing in…
-            </>
-          ) : (
-            'Sign in'
-          )}
+        {/* The label crossfades instead of snapping (anim guide §17). */}
+        <button
+          type="submit"
+          disabled={loading}
+          className={`ui-btn ui-btn--block ui-btn--lg ${
+            done ? 'ui-btn--success' : 'ui-btn--primary'
+          }`}
+        >
+          <span
+            key={done ? 'done' : loading ? 'loading' : 'idle'}
+            className="inline-flex animate-fade-quick items-center gap-2"
+          >
+            {loading ? (
+              <>
+                <span className="ui-spinner" aria-hidden /> Signing in…
+              </>
+            ) : done ? (
+              <>
+                <span aria-hidden>✓</span> Signed in
+              </>
+            ) : (
+              'Sign in'
+            )}
+          </span>
         </button>
       </form>
 

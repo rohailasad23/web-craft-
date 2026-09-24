@@ -41,11 +41,18 @@
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  --animate-fade-up: fade-up 0.7s var(--ease-out-quint) both;
-  --animate-fade-in: fade-in 0.5s ease-out both;
-  --animate-pop-in: pop-in 0.55s var(--ease-spring) both;
-  --animate-slide-down: slide-down 0.45s var(--ease-out-quint) both;
-  --animate-slide-right: slide-right 0.45s var(--ease-out-quint) both;
+  /* Animation language (anim guide §1, §31): interactions 150-300ms,
+     reveals 300-500ms. Every token uses the same ease-out curve so no
+     screen feels like it was animated by a different person. */
+  --animate-fade-up: fade-up 0.45s var(--ease-out-quint) backwards;
+  --animate-fade-in: fade-in 0.4s ease-out backwards;
+  --animate-fade-quick: fade-in 0.22s ease-out backwards;
+  --animate-pop-in: pop-in 0.42s var(--ease-spring) backwards;
+  --animate-slide-down: slide-down 0.3s var(--ease-out-quint) backwards;
+  --animate-slide-right: slide-right 0.35s var(--ease-out-quint) backwards;
+  --animate-page-in: page-in 0.32s var(--ease-out-quint) backwards;
+  --animate-toast-in: toast-in 0.32s var(--ease-out-quint) backwards;
+  --animate-toast-out: toast-out 0.22s ease-in both;
   --animate-float: float 7s ease-in-out infinite;
   --animate-float-slow: float 11s ease-in-out infinite;
   --animate-shimmer: shimmer 1.6s linear infinite;
@@ -53,13 +60,22 @@
   --animate-wiggle: wiggle 0.5s var(--ease-spring);
 }
 
+/* `backwards` instead of `both` is deliberate. A filled animation's `to`
+   frame wins over normal declarations (CSS cascade rank: animations beat
+   author rules), so a card kept inside a `.stagger` grid would be stuck on
+   `transform: translate3d(0,0,0)` and could never lift on hover. With
+   `backwards` the start frame still applies during the delay, but once the
+   animation ends the element falls back to its own styles.
+   Keyframes therefore end on `transform: none` so nothing is composited
+   and no transformed containing block is left behind. */
+
 /* Keyframes live OUTSIDE @theme on purpose: Tailwind only emits @theme
    keyframes that some used utility references, but these are also used by
    plain component CSS (.ui-alert, .stagger, .ui-spinner) which Tailwind
    cannot see. Defining them here guarantees they reach the output. */
 @keyframes fade-up {
   from { opacity: 0; transform: translate3d(0, 18px, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes fade-in {
   from { opacity: 0; }
@@ -67,15 +83,36 @@
 }
 @keyframes pop-in {
   from { opacity: 0; transform: scale(0.94) translate3d(0, 12px, 0); }
-  to { opacity: 1; transform: scale(1) translate3d(0, 0, 0); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes slide-down {
   from { opacity: 0; transform: translate3d(0, -14px, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes slide-right {
   from { opacity: 0; transform: translate3d(-16px, 0, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+/* Route change (anim guide §11): new page eases up a few pixels and in.
+   Ends on `none` so fixed/sticky children are unaffected afterwards. */
+@keyframes page-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
+}
+/* Toasts (anim guide §20) enter with a fade + slight slide ... */
+@keyframes toast-in {
+  from { opacity: 0; transform: translate3d(14px, 0, 0) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+/* ... and leave the same way instead of vanishing instantly. */
+@keyframes toast-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(16px, 0, 0) scale(0.97); }
+}
+/* Lightbox (anim guide §23). Backdrop fades, image scales into place. */
+@keyframes lightbox-in {
+  from { opacity: 0; transform: scale(0.965); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes float {
   0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
@@ -153,12 +190,13 @@
     border-radius: 1.25rem;
     box-shadow: var(--shadow-soft);
     transition:
-      transform 0.4s var(--ease-out-quint),
-      box-shadow 0.4s var(--ease-out-quint),
-      border-color 0.3s ease;
+      transform 0.3s var(--ease-out-quint),
+      box-shadow 0.3s var(--ease-out-quint),
+      border-color 0.25s ease;
   }
+  /* Anim guide §4: lift a few pixels, not a jump -- -4px, never more. */
   .ui-card--hover:hover {
-    transform: translateY(-6px);
+    transform: translateY(-4px);
     box-shadow: var(--shadow-lift);
     border-color: var(--color-brand-200);
   }
@@ -301,7 +339,7 @@
     padding: 0.875rem 1rem;
     border-radius: 0.875rem;
     font-size: 0.875rem;
-    animation: fade-up 0.4s var(--ease-out-quint) both;
+    animation: fade-up 0.4s var(--ease-out-quint) backwards;
     border: 1px solid transparent;
   }
   .ui-alert--error {
@@ -393,20 +431,22 @@
    MOTION UTILITIES
    ============================================================ */
 
-/* Auto-stagger direct children -- add .stagger to a container. */
+/* Auto-stagger direct children -- add .stagger to a container.
+   Anim guide §10: ~50ms between cards and a short total, so a grid is
+   still readable and clickable while the last row is settling in. */
 .stagger > * {
-  animation: fade-up 0.65s var(--ease-out-quint) both;
+  animation: fade-up 0.45s var(--ease-out-quint) backwards;
 }
-.stagger > *:nth-child(1) { animation-delay: 0.03s; }
-.stagger > *:nth-child(2) { animation-delay: 0.09s; }
-.stagger > *:nth-child(3) { animation-delay: 0.15s; }
-.stagger > *:nth-child(4) { animation-delay: 0.21s; }
-.stagger > *:nth-child(5) { animation-delay: 0.27s; }
-.stagger > *:nth-child(6) { animation-delay: 0.33s; }
-.stagger > *:nth-child(7) { animation-delay: 0.39s; }
-.stagger > *:nth-child(8) { animation-delay: 0.45s; }
-.stagger > *:nth-child(9) { animation-delay: 0.51s; }
-.stagger > *:nth-child(10) { animation-delay: 0.57s; }
+.stagger > *:nth-child(1) { animation-delay: 0s; }
+.stagger > *:nth-child(2) { animation-delay: 0.05s; }
+.stagger > *:nth-child(3) { animation-delay: 0.1s; }
+.stagger > *:nth-child(4) { animation-delay: 0.15s; }
+.stagger > *:nth-child(5) { animation-delay: 0.2s; }
+.stagger > *:nth-child(6) { animation-delay: 0.25s; }
+.stagger > *:nth-child(7) { animation-delay: 0.3s; }
+.stagger > *:nth-child(8) { animation-delay: 0.35s; }
+.stagger > *:nth-child(9) { animation-delay: 0.4s; }
+.stagger > *:nth-child(10) { animation-delay: 0.45s; }
 
 /* Reveal on hover -- icons, arrows, secondary actions */
 .reveal-hover {
@@ -421,6 +461,97 @@
 }
 
 /* ============================================================
+   MAGNETIC CTA (anim guide §8)
+   Applied to the one hero CTA and nothing else. The pointer handler
+   only writes a CSS custom transform -- no animation loop -- and is
+   inert on touch or when the OS asks for reduced motion.
+   ============================================================ */
+.ui-magnetic {
+  display: inline-flex;
+  transition: transform 0.3s var(--ease-out-quint);
+}
+
+/* ============================================================
+   LIGHTBOX (anim guide §23)
+   Fixed overlay for the screenshot gallery. No backdrop-filter on
+   purpose: blurring an animated layer is the expensive case the
+   performance rules call out, and a flat scrim reads just as clean.
+   ============================================================ */
+.ui-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+.ui-lightbox__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(2 6 23 / 0.92);
+  animation: fade-in 0.28s ease-out both;
+}
+.ui-lightbox__img {
+  position: relative;
+  max-width: min(92vw, 1400px);
+  max-height: 82vh;
+  border-radius: 0.75rem;
+  box-shadow: 0 30px 70px -24px rgb(0 0 0 / 0.7);
+  animation: lightbox-in 0.32s var(--ease-out-quint) both;
+  cursor: zoom-out;
+}
+.ui-lightbox__nav,
+.ui-lightbox__close {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+  transition:
+    background-color 0.2s ease,
+    transform 0.2s var(--ease-out-quint);
+  animation: fade-in 0.28s ease-out backwards;
+}
+.ui-lightbox__close {
+  top: 1rem;
+  right: 1rem;
+  height: 2.5rem;
+  width: 2.5rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.ui-lightbox__nav {
+  top: 50%;
+  transform: translateY(-50%);
+  height: 3rem;
+  width: 3rem;
+  font-size: 1.25rem;
+}
+.ui-lightbox__nav--prev { left: 1rem; }
+.ui-lightbox__nav--next { right: 1rem; }
+.ui-lightbox__nav:hover,
+.ui-lightbox__close:hover {
+  background: rgb(255 255 255 / 0.28);
+}
+.ui-lightbox__nav:active,
+.ui-lightbox__close:active { transform: translateY(-50%) scale(0.94); }
+.ui-lightbox__close:active { transform: scale(0.94); }
+.ui-lightbox__count {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  padding: 0.3rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.08em;
+}
+
+/* ============================================================
    ACCESSIBILITY -- respect the OS "reduce motion" setting
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
@@ -428,8 +559,14 @@
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
+
+  /* Everything above snaps to its end state instantly. Reveals use
+     `backwards` fill, so once they are over the element falls back to its
+     own styles -- content is never left stuck at opacity 0. */
 }

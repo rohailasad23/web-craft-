@@ -77,7 +77,11 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
     <SessionContext.Provider value={contextValue}>
       <div className="flex min-h-screen flex-col bg-ink-50 font-sans text-ink-900 antialiased">
         <Navbar />
-        <div className="flex-1">
+        {/* Keyed on the path so every navigation replays a single, fast
+            reveal (anim guide §11). Query-only changes -- filters,
+            pagination -- deliberately do NOT remount, so the grid updates
+            in place instead of flashing the whole page (§12). */}
+        <div key={location.pathname} className="flex-1 animate-page-in">
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/templates" element={<Templates />} />

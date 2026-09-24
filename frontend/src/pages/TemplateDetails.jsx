@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -23,7 +23,21 @@ export default function TemplateDetails() {
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
   const [activeShot, setActiveShot] = useState(0);
-  const [downloading, setDownloading] = useState(false);
+  // Download follows Download -> Downloading... -> Downloaded (§16).
+  const [phase, setPhase] = useState('idle');
+  // Index of the screenshot shown in the lightbox, or null when closed (§23).
+  const [lightbox, setLightbox] = useState(null);
+  const resetTimer = useRef(null);
+  const closeRef = useRef(null);
+
+  // Gallery list. Screenshots are optional, so fall back to the thumbnail.
+  const shots = template
+    ? template.screenshots?.length
+      ? template.screenshots
+      : template.thumbnail
+        ? [template.thumbnail]
+        : []
+    : [];
 
   useEffect(() => {
     let alive = true;
@@ -51,23 +65,51 @@ export default function TemplateDetails() {
     };
   }, [slug]);
 
+  // Cancel a pending "Downloaded -> Download" reset on unmount.
+  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
+
+  // Lightbox keyboard support (anim guide §23/§25): Escape closes, the
+  // arrow keys step through the gallery, and the page behind is locked so
+  // it cannot scroll away under the overlay.
+  useEffect(() => {
+    if (lightbox === null || shots.length === 0) return undefined;
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') setLightbox(null);
+      else if (e.key === 'ArrowRight') setLightbox((i) => (i + 1) % shots.length);
+      else if (e.key === 'ArrowLeft') setLightbox((i) => (i - 1 + shots.length) % shots.length);
+    };
+
+    window.addEventListener('keydown', onKey);
+    // Keyboard-first: focus lands on Close so Tab/Escape work immediately.
+    closeRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [lightbox, shots.length]);
+
   const handleDownload = async () => {
-    if (downloading) return;
+    if (phase === 'busy') return;
     if (!isAuthenticated) {
       toast.info('Please log in to download this template.');
       return;
     }
 
-    setDownloading(true);
+    setPhase('busy');
     try {
       await downloadTemplate(template);
       toast.success(`Downloading “${template.title}”`);
       // Reflect the increment without refetching the whole page.
       setTemplate((t) => ({ ...t, downloadCount: (t.downloadCount || 0) + 1 }));
+      setPhase('done');
+      window.clearTimeout(resetTimer.current);
+      resetTimer.current = window.setTimeout(() => setPhase('idle'), 2400);
     } catch (err) {
       toast.error(err.message);
-    } finally {
-      setDownloading(false);
+      setPhase('idle');
     }
   };
 
@@ -107,11 +149,6 @@ export default function TemplateDetails() {
     );
   }
 
-  const shots = template.screenshots?.length
-    ? template.screenshots
-    : template.thumbnail
-      ? [template.thumbnail]
-      : [];
   const activeImage = shots[activeShot] || template.thumbnail;
   const authorId = author?._id ?? author;
 
@@ -145,13 +182,21 @@ export default function TemplateDetails() {
           <section aria-label="Screenshots">
             <div className="ui-card overflow-hidden !p-0">
               <div className="relative aspect-[16/10] bg-ink-100">
+                {/* The screenshot itself opens the lightbox (anim guide §23). */}
                 {activeImage ? (
-                  <img
-                    key={activeImage}
-                    src={mediaUrl(activeImage)}
-                    alt={`${template.title} screenshot ${activeShot + 1}`}
-                    className="h-full w-full object-cover animate-fade-in"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setLightbox(activeShot)}
+                    aria-label={`View ${template.title} screenshot ${activeShot + 1} fullscreen`}
+                    className="absolute inset-0 block h-full w-full cursor-zoom-in overflow-hidden"
+                  >
+                    <img
+                      key={activeImage}
+                      src={mediaUrl(activeImage)}
+                      alt={`${template.title} screenshot ${activeShot + 1}`}
+                      className="h-full w-full object-cover animate-fade-in"
+                    />
+                  </button>
                 ) : (
                   <div className="grid h-full w-full place-items-center text-5xl" aria-hidden>
                     🧩
@@ -159,6 +204,10 @@ export default function TemplateDetails() {
                 )}
                 <span className="absolute left-4 top-4 rounded-full bg-white/90 px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-700 shadow-soft backdrop-blur">
                   {template.category}
+                </span>
+                {/* Hover-only hint: decorative, never the only way in. */}
+                <span className="reveal-hover pointer-events-none absolute right-4 top-4 inline-flex items-center gap-1.5 rounded-full bg-ink-900/70 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white shadow-soft backdrop-blur">
+                  <span aria-hidden>⤢</span> Fullscreen
                 </span>
               </div>
             </div>
@@ -270,21 +319,32 @@ export default function TemplateDetails() {
 
               {/* actions */}
               <div className="mt-6 space-y-2.5">
+                {/* Download -> Downloading... -> Downloaded (anim guide §16).
+                    Full-width, so the longer labels never shift the card. */}
                 <button
                   type="button"
                   onClick={handleDownload}
-                  disabled={downloading}
-                  className="ui-btn ui-btn--primary ui-btn--lg ui-btn--block !text-base"
+                  disabled={phase === 'busy'}
+                  aria-live="polite"
+                  className={`ui-btn ui-btn--lg ui-btn--block !text-base ${
+                    phase === 'done' ? 'ui-btn--success' : 'ui-btn--primary'
+                  }`}
                 >
-                  {downloading ? (
-                    <>
-                      <span className="ui-spinner" aria-hidden /> Downloading…
-                    </>
-                  ) : (
-                    <>
-                      <span aria-hidden>↓</span> Download template
-                    </>
-                  )}
+                  <span
+                    key={phase}
+                    className="inline-flex animate-fade-quick items-center gap-2"
+                  >
+                    {phase === 'busy' ? (
+                      <span className="ui-spinner" aria-hidden />
+                    ) : (
+                      <span aria-hidden>{phase === 'done' ? '✓' : '↓'}</span>
+                    )}
+                    {phase === 'busy'
+                      ? 'Downloading…'
+                      : phase === 'done'
+                        ? 'Downloaded'
+                        : 'Download template'}
+                  </span>
                 </button>
 
                 {!isAuthenticated && (
@@ -342,6 +402,68 @@ export default function TemplateDetails() {
           </aside>
         </div>
       </main>
+
+      {/* ------------------------------------------------ lightbox (§23) */}
+      {lightbox !== null && shots[lightbox] && (
+        <div
+          className="ui-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${template.title} screenshots`}
+          onClick={() => setLightbox(null)}
+        >
+          <div className="ui-lightbox__scrim" />
+
+          <img
+            src={mediaUrl(shots[lightbox])}
+            alt={`${template.title} screenshot ${lightbox + 1}`}
+            className="ui-lightbox__img"
+          />
+
+          {shots.length > 1 && (
+            <>
+              <button
+                type="button"
+                className="ui-lightbox__nav ui-lightbox__nav--prev"
+                aria-label="Previous screenshot"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightbox((i) => (i - 1 + shots.length) % shots.length);
+                }}
+              >
+                ‹
+              </button>
+              <button
+                type="button"
+                className="ui-lightbox__nav ui-lightbox__nav--next"
+                aria-label="Next screenshot"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightbox((i) => (i + 1) % shots.length);
+                }}
+              >
+                ›
+              </button>
+              <span className="ui-lightbox__count">
+                {lightbox + 1} / {shots.length}
+              </span>
+            </>
+          )}
+
+          <button
+            ref={closeRef}
+            type="button"
+            className="ui-lightbox__close"
+            aria-label="Close fullscreen preview"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLightbox(null);
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <Footer />
     </div>

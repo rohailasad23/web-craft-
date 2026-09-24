@@ -17,16 +17,33 @@ const TONE = {
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const nextId = useRef(0);
+  const leaving = useRef(new Set());
 
-  const dismiss = useCallback((id) => {
+  const remove = useCallback((id) => {
+    leaving.current.delete(id);
     setToasts((list) => list.filter((t) => t.id !== id));
   }, []);
+
+  /**
+   * Animate the toast out before it disappears (anim guide §20: exit is
+   * a fade + slight slide, not an instant vanish). Guarded by a Set so
+   * an auto-dismiss and a manual click on the same toast never race.
+   */
+  const dismiss = useCallback(
+    (id) => {
+      if (leaving.current.has(id)) return;
+      leaving.current.add(id);
+      setToasts((list) => list.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+      window.setTimeout(() => remove(id), 220);
+    },
+    [remove]
+  );
 
   const show = useCallback(
     (message, type = 'success') => {
       const id = ++nextId.current;
       setToasts((list) => [...list.slice(-3), { id, message: String(message || ''), type }]);
-      setTimeout(() => dismiss(id), 4500);
+      window.setTimeout(() => dismiss(id), 4500);
     },
     [dismiss]
   );
@@ -51,7 +68,9 @@ export function ToastProvider({ children }) {
           return (
             <div
               key={t.id}
-              className={`ui-card pointer-events-auto flex items-start gap-3 border p-3.5 text-sm shadow-lift animate-pop-in ${tone.cls}`}
+              className={`ui-card pointer-events-auto flex items-start gap-3 border p-3.5 text-sm shadow-lift ${tone.cls} ${
+                t.leaving ? 'animate-toast-out' : 'animate-toast-in'
+              }`}
             >
               <span
                 aria-hidden

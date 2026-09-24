@@ -8,6 +8,31 @@ import TemplateCard from '../components/Templates/TemplateCard';
 import { TemplateGridSkeleton, StatSkeleton } from '../components/Common/Skeletons';
 import Footer from '../components/Common/Footer';
 
+/* Anim guide §8 -- one magnetic CTA, and only one.
+   Feature-detected at load: nothing runs for touch users (§25) or when the
+   OS asks for reduced motion (§26). The handler only writes a transform, so
+   there is no JavaScript animation loop and the browser stays on the GPU (§27). */
+const CAN_MAGNET =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(hover: hover) and (pointer: fine)').matches &&
+  !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const MAGNET_MAX = 5; // spec: 2-5px, never more
+
+function magnetMove(event) {
+  if (!CAN_MAGNET) return;
+  const box = event.currentTarget.getBoundingClientRect();
+  const dx = ((event.clientX - box.left) / box.width - 0.5) * 2;
+  const dy = ((event.clientY - box.top) / box.height - 0.5) * 2;
+  event.currentTarget.style.transform =
+    `translate3d(${(dx * MAGNET_MAX).toFixed(1)}px, ${(dy * MAGNET_MAX).toFixed(1)}px, 0)`;
+}
+
+function magnetLeave(event) {
+  event.currentTarget.style.transform = '';
+}
+
 /**
  * Discovery homepage (spec §7): hero + search, category entry points, featured,
  * latest and popular templates, and a contributor section.
@@ -110,9 +135,15 @@ export default function Home() {
           </form>
 
           <div className="mt-8 flex animate-fade-up flex-col items-center justify-center gap-3 [animation-delay:.32s] sm:flex-row">
-            <Link to="/templates" className="ui-btn ui-btn--lg">
-              Browse all templates
-            </Link>
+            <span
+              className="ui-magnetic"
+              onPointerMove={magnetMove}
+              onPointerLeave={magnetLeave}
+            >
+              <Link to="/templates" className="ui-btn ui-btn--primary ui-btn--lg">
+                Browse all templates
+              </Link>
+            </span>
             {!isAuthenticated ? (
               <Link to="/register" className="ui-btn ui-btn--soft !px-6 !py-3.5">
                 Become a developer

@@ -124,7 +124,12 @@ export default function Templates() {
             </div>
           ) : (
             <>
-              <div className="stagger grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div
+                aria-busy={loading}
+                className={`stagger grid gap-5 transition-opacity duration-300 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${
+                  loading && data ? 'opacity-60' : 'opacity-100'
+                }`}
+              >
                 {templates.map((t) => (
                   <TemplateCard key={t._id || t.slug} template={t} />
                 ))}

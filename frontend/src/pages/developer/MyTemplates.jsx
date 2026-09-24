@@ -139,7 +139,7 @@ export default function MyTemplates() {
                               type="button"
                               onClick={() => handleDelete(t)}
                               disabled={isDeleting}
-                              className="ui-btn !border-red-200 !bg-red-50 !px-3 !py-2 !text-xs !text-red-600 hover:!bg-red-100"
+                              className="ui-btn animate-fade-quick !border-red-200 !bg-red-50 !px-3 !py-2 !text-xs !text-red-600 hover:!bg-red-100"
                             >
                               {isDeleting ? 'Deleting…' : 'Yes, delete'}
                             </button>
@@ -147,7 +147,7 @@ export default function MyTemplates() {
                               type="button"
                               onClick={() => setConfirming('')}
                               disabled={isDeleting}
-                              className="ui-btn ui-btn--ghost !px-3 !py-2 !text-xs"
+                              className="ui-btn ui-btn--ghost animate-fade-quick !px-3 !py-2 !text-xs"
                             >
                               Cancel
                             </button>

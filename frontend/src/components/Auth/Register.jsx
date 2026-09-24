@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
 
@@ -34,14 +34,26 @@ export default function Register({ onAuth }) {
   });
   const [role, setRole] = useState('user');
   const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const mounted = useRef(true);
+
+  // StrictMode mounts, unmounts and mounts again in dev, so the flag has
+  // to be claimed on mount -- not only released on cleanup -- otherwise
+  // the success redirect below would never fire.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (loading) return;
+    if (loading || done) return;
 
     if (!form.name.trim() || !form.email.trim() || !form.password) {
       setError('Please fill in name, email and password');
@@ -64,10 +76,16 @@ export default function Register({ onAuth }) {
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       onAuth?.(res.data.user, res.data.token);
-      navigate('/dashboard', { replace: true });
+
+      // Normal -> Loading -> Success (anim guide §17): show the green
+      // "Account created" confirmation before we move to the dashboard.
+      setLoading(false);
+      setDone(true);
+      window.setTimeout(() => {
+        if (mounted.current) navigate('/dashboard', { replace: true });
+      }, 480);
     } catch (err) {
       setError(getErrorMessage(err, 'Registration failed'));
-    } finally {
       setLoading(false);
     }
   };
@@ -211,14 +229,27 @@ export default function Register({ onAuth }) {
           />
         </div>
 
-        <button type="submit" disabled={loading} className="ui-btn ui-btn--primary ui-btn--block ui-btn--lg">
-          {loading ? (
-            <>
-              <span className="ui-spinner" aria-hidden /> Creating account…
-            </>
-          ) : (
-            'Create account'
-          )}
+        <button
+          type="submit"
+          disabled={loading}
+          className={`ui-btn ui-btn--block ui-btn--lg ${
+            done ? 'ui-btn--success' : 'ui-btn--primary'
+          }`}
+        >
+          {/* Label crossfades between states rather than snapping (§17). */}
+          <span key={done ? 'done' : loading ? 'loading' : 'idle'} className="inline-flex animate-fade-quick items-center gap-2">
+            {loading ? (
+              <>
+                <span className="ui-spinner" aria-hidden /> Creating account…
+              </>
+            ) : done ? (
+              <>
+                <span aria-hidden>✓</span> Account created
+              </>
+            ) : (
+              'Create account'
+            )}
+          </span>
         </button>
 
         <p className="text-center text-xs leading-relaxed text-ink-500">

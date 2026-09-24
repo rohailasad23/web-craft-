@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { mediaUrl, formatCount } from '../../lib/format';
 import { useSession } from '../../lib/session';
@@ -13,14 +13,20 @@ export default function TemplateCard({ template, onDownloaded }) {
   const { isAuthenticated } = useSession();
   const navigate = useNavigate();
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
+  // Download runs a small three-state cycle (anim guide §16):
+  // Download -> Downloading... -> Downloaded, then it eases back to idle.
+  const [phase, setPhase] = useState('idle');
+  const resetTimer = useRef(null);
+
+  // Never leave a timer behind if the grid unmounts mid-download.
+  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
 
   if (!template) return null;
 
   const handleDownload = async (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (busy) return;
+    if (phase === 'busy') return;
 
     if (!isAuthenticated) {
       toast.info('Please log in to download this template.');
@@ -28,15 +34,17 @@ export default function TemplateCard({ template, onDownloaded }) {
       return;
     }
 
-    setBusy(true);
+    setPhase('busy');
     try {
       await downloadTemplate(template);
       toast.success(`Downloading “${template.title}”`);
       onDownloaded?.(template);
+      setPhase('done');
+      window.clearTimeout(resetTimer.current);
+      resetTimer.current = window.setTimeout(() => setPhase('idle'), 2000);
     } catch (err) {
       toast.error(err.message);
-    } finally {
-      setBusy(false);
+      setPhase('idle');
     }
   };
 
@@ -53,7 +61,7 @@ export default function TemplateCard({ template, onDownloaded }) {
           src={mediaUrl(template.thumbnail)}
           alt={`${template.title} preview`}
           loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.06]"
+          className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
         />
         <span className="absolute left-3 top-3 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-700 shadow-soft backdrop-blur">
           {template.category}
@@ -142,11 +150,20 @@ export default function TemplateCard({ template, onDownloaded }) {
           <button
             type="button"
             onClick={handleDownload}
-            disabled={busy}
-            className="ui-btn ui-btn--primary flex-1 !px-2 !py-1.5 !text-[11px]"
+            disabled={phase === 'busy'}
+            aria-live="polite"
+            className={`ui-btn flex-1 whitespace-nowrap !px-2 !py-1.5 !text-[11px] ${
+              phase === 'done' ? 'ui-btn--success' : 'ui-btn--primary'
+            }`}
           >
-            {busy ? <span className="ui-spinner" aria-hidden /> : <span aria-hidden>↓</span>}
-            {busy ? '…' : 'Download'}
+            {phase === 'busy' ? (
+              <span className="ui-spinner" aria-hidden />
+            ) : (
+              <span aria-hidden>{phase === 'done' ? '✓' : '↓'}</span>
+            )}
+            <span key={phase} className="animate-fade-quick">
+              {phase === 'busy' ? 'Downloading…' : phase === 'done' ? 'Downloaded' : 'Download'}
+            </span>
           </button>
         </div>
       </div>

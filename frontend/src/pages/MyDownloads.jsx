@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
@@ -20,6 +20,11 @@ export default function MyDownloads() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busySlug, setBusySlug] = useState('');
+  // Which row is showing its "Downloaded" confirmation (anim guide §16).
+  const [doneSlug, setDoneSlug] = useState('');
+  const doneTimer = useRef(null);
+
+  useEffect(() => () => window.clearTimeout(doneTimer.current), []);
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
@@ -37,11 +42,14 @@ export default function MyDownloads() {
   }, [isAuthenticated]);
 
   const handleDownload = async (template) => {
-    if (busySlug) return;
+    if (busySlug || doneSlug === template.slug) return;
     setBusySlug(template.slug);
     try {
       await downloadTemplate(template);
       toast.success(`Downloading “${template.title}”`);
+      setDoneSlug(template.slug);
+      window.clearTimeout(doneTimer.current);
+      doneTimer.current = window.setTimeout(() => setDoneSlug(''), 2000);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -140,14 +148,27 @@ export default function MyDownloads() {
                             type="button"
                             onClick={() => handleDownload(template)}
                             disabled={busy}
-                            className="ui-btn ui-btn--primary flex-1 !px-3 !py-2 !text-xs sm:flex-none"
+                            className={`ui-btn flex-1 whitespace-nowrap !px-3 !py-2 !text-xs sm:flex-none ${
+                              doneSlug === template.slug ? 'ui-btn--success' : 'ui-btn--primary'
+                            }`}
                           >
                             {busy ? (
                               <span className="ui-spinner" aria-hidden />
                             ) : (
-                              <span aria-hidden>↓</span>
+                              <span aria-hidden>{doneSlug === template.slug ? '✓' : '↓'}</span>
                             )}
-                            {busy ? '…' : 'Download again'}
+                            <span
+                              key={
+                                busy ? 'busy' : doneSlug === template.slug ? 'done' : 'idle'
+                              }
+                              className="animate-fade-quick"
+                            >
+                              {busy
+                                ? 'Downloading…'
+                                : doneSlug === template.slug
+                                  ? 'Downloaded'
+                                  : 'Download again'}
+                            </span>
                           </button>
                         </div>
                       </div>
