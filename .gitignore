@@ -32,6 +32,10 @@ out.txt
 .data/
 backend/.data/
 
+# User-uploaded template archives and images — generated at runtime
+backend/uploads/
+uploads/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

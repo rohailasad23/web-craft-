@@ -2,11 +2,40 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
 
+const ROLE_OPTIONS = [
+  {
+    value: 'user',
+    icon: '👤',
+    title: 'Downloader',
+    blurb: 'Browse, preview and download templates.',
+  },
+  {
+    value: 'developer',
+    icon: '🛠',
+    title: 'Developer',
+    blurb: 'Everything above, plus upload and manage your own templates.',
+  },
+];
+
+/**
+ * Register (spec §3, §22 "How to become a developer").
+ *
+ * The account type the visitor picks here is sent as `role`, and the server
+ * only ever accepts `user` or `developer` -- `admin` is coerced back to `user`
+ * there, so no crafted request can create an administrator.
+ */
 export default function Register({ onAuth }) {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+  });
+  const [role, setRole] = useState('user');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -14,6 +43,10 @@ export default function Register({ onAuth }) {
     e.preventDefault();
     if (loading) return;
 
+    if (!form.name.trim() || !form.email.trim() || !form.password) {
+      setError('Please fill in name, email and password');
+      return;
+    }
     if (form.password !== form.confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -27,10 +60,10 @@ export default function Register({ onAuth }) {
     setError('');
 
     try {
-      const res = await api.post('/api/auth/register', form);
+      const res = await api.post('/api/auth/register', { ...form, role });
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
-      onAuth?.(res.data.user);
+      onAuth?.(res.data.user, res.data.token);
       navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(getErrorMessage(err, 'Registration failed'));
@@ -40,158 +73,167 @@ export default function Register({ onAuth }) {
   };
 
   return (
-    <div className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-6xl items-center px-4 py-12 sm:px-6">
-      {/* backdrop */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-32 bottom-10 h-96 w-96 rounded-full bg-purple-300/40 blur-3xl animate-float" />
-        <div className="absolute -right-24 top-0 h-80 w-80 rounded-full bg-brand-300/40 blur-3xl animate-float-slow" />
+    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md flex-col justify-center px-5 py-14 sm:px-6">
+      <div className="animate-fade-up">
+        <Link to="/" className="mb-8 flex w-fit items-center gap-2.5">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-lg shadow-soft">
+            🧩
+          </span>
+          <span className="text-xl font-extrabold tracking-tight text-ink-900">web craft</span>
+        </Link>
+
+        <span className="ui-eyebrow">Create account</span>
+        <h1 className="ui-title mt-2 text-3xl">Join web craft</h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-500">
+          Download templates straight away, or publish your own and let the community use it.
+        </p>
       </div>
 
-      <div className="relative grid w-full gap-8 lg:grid-cols-2 lg:items-center">
-        {/* Brand panel */}
-        <div className="hidden lg:block animate-slide-right">
-          <Link to="/" className="inline-flex items-center gap-2.5">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-lg shadow-soft">
-              ⚡
-            </span>
-            <span className="text-lg font-extrabold tracking-tight">LP Builder</span>
-          </Link>
+      <form
+        onSubmit={handleSubmit}
+        className="ui-card mt-8 space-y-5 p-6 animate-fade-up [animation-delay:.08s]"
+        noValidate
+      >
+        {error && (
+          <div className="ui-alert ui-alert--error" role="alert">
+            {error}
+          </div>
+        )}
 
-          <h1 className="ui-title mt-8 text-4xl xl:text-5xl">
-            Build your first
-            <br />
-            <span className="bg-gradient-to-r from-brand-500 to-purple-600 bg-clip-text text-transparent">
-              page in 60 seconds.
-            </span>
-          </h1>
-          <p className="mt-4 max-w-md text-ink-500">
-            One description in, a complete editable landing page out. No design tools, no
-            developer, no waiting.
-          </p>
+        {/* account type (spec §4 -- never `admin`) */}
+        <fieldset>
+          <legend className="ui-label">I want to…</legend>
+          <div className="stagger grid gap-2.5 sm:grid-cols-2">
+            {ROLE_OPTIONS.map((option) => {
+              const active = role === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setRole(option.value)}
+                  aria-pressed={active}
+                  className={`rounded-xl border-2 p-3.5 text-left transition-all duration-300 ${
+                    active
+                      ? 'border-brand-600 bg-brand-50 shadow-soft'
+                      : 'border-ink-200 bg-white hover:-translate-y-0.5 hover:border-brand-300'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden className="text-base">
+                      {option.icon}
+                    </span>
+                    <span className="text-sm font-bold text-ink-900">{option.title}</span>
+                    {active && <span className="ml-auto text-sm font-bold text-brand-600">✓</span>}
+                  </span>
+                  <span className="mt-1.5 block text-xs leading-relaxed text-ink-500">
+                    {option.blurb}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
 
-          <div className="mt-8 grid max-w-md grid-cols-3 gap-3">
-            {[
-              ['⚡', 'Instant draft'],
-              ['🎨', 'Fully editable'],
-              ['🚀', 'One-click publish'],
-            ].map(([icon, label]) => (
-              <div
-                key={label}
-                className="ui-card ui-card--hover !rounded-xl p-3.5 text-center transition-all duration-300 hover:!-translate-y-1"
-              >
-                <div className="text-xl">{icon}</div>
-                <div className="mt-1.5 text-xs font-semibold text-ink-700">{label}</div>
-              </div>
-            ))}
+        <div>
+          <label htmlFor="name" className="ui-label">
+            Name
+          </label>
+          <input
+            id="name"
+            type="text"
+            value={form.name}
+            onChange={update('name')}
+            placeholder="Your name"
+            maxLength={80}
+            className="ui-input"
+            autoComplete="name"
+            required
+          />
+        </div>
+
+        <div>
+          <label htmlFor="email" className="ui-label">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={form.email}
+            onChange={update('email')}
+            placeholder="you@example.com"
+            className="ui-input"
+            autoComplete="email"
+            required
+          />
+        </div>
+
+        <div>
+          <label htmlFor="password" className="ui-label">
+            Password
+          </label>
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              value={form.password}
+              onChange={update('password')}
+              placeholder="At least 6 characters"
+              minLength={6}
+              className="ui-input !pr-16"
+              autoComplete="new-password"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs font-semibold text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-700"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? 'Hide' : 'Show'}
+            </button>
           </div>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="ui-card animate-pop-in w-full max-w-md p-7 sm:p-9 lg:justify-self-end">
-          <div className="lg:hidden mb-5">
-            <Link to="/" className="inline-flex items-center gap-2">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-soft">
-                ⚡
-              </span>
-              <span className="text-base font-extrabold tracking-tight">LP Builder</span>
-            </Link>
-          </div>
+        <div>
+          <label htmlFor="confirmPassword" className="ui-label">
+            Confirm password
+          </label>
+          <input
+            id="confirmPassword"
+            type={showPassword ? 'text' : 'password'}
+            value={form.confirmPassword}
+            onChange={update('confirmPassword')}
+            placeholder="Repeat it"
+            minLength={6}
+            className="ui-input"
+            autoComplete="new-password"
+            required
+          />
+        </div>
 
-          <span className="ui-eyebrow">Get started</span>
-          <h2 className="ui-title mt-2 text-2xl">Create your account</h2>
-          <p className="mt-1.5 text-sm text-ink-500">Free forever — no credit card needed.</p>
-
-          {error && (
-            <div role="alert" className="ui-alert ui-alert--error mt-5">
-              <span aria-hidden>⚠️</span>
-              <span>{error}</span>
-            </div>
+        <button type="submit" disabled={loading} className="ui-btn ui-btn--primary ui-btn--block ui-btn--lg">
+          {loading ? (
+            <>
+              <span className="ui-spinner" aria-hidden /> Creating account…
+            </>
+          ) : (
+            'Create account'
           )}
+        </button>
 
-          <div className="stagger mt-6 space-y-4">
-            <div>
-              <label htmlFor="reg-name" className="ui-label">
-                Name
-              </label>
-              <input
-                id="reg-name"
-                type="text"
-                placeholder="Your name"
-                required
-                autoComplete="name"
-                className="ui-input"
-                value={form.name}
-                onChange={update('name')}
-              />
-            </div>
+        <p className="text-center text-xs leading-relaxed text-ink-500">
+          {role === 'developer'
+            ? 'You can switch back to a normal account any time from Profile settings.'
+            : 'You can upgrade to a developer account later from your dashboard.'}
+        </p>
+      </form>
 
-            <div>
-              <label htmlFor="reg-email" className="ui-label">
-                Email
-              </label>
-              <input
-                id="reg-email"
-                type="email"
-                placeholder="you@company.com"
-                required
-                autoComplete="email"
-                className="ui-input"
-                value={form.email}
-                onChange={update('email')}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="reg-password" className="ui-label">
-                Password
-              </label>
-              <input
-                id="reg-password"
-                type="password"
-                placeholder="At least 6 characters"
-                required
-                autoComplete="new-password"
-                minLength={6}
-                className="ui-input"
-                value={form.password}
-                onChange={update('password')}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="reg-confirm" className="ui-label">
-                Confirm password
-              </label>
-              <input
-                id="reg-confirm"
-                type="password"
-                placeholder="Repeat your password"
-                required
-                autoComplete="new-password"
-                className="ui-input"
-                value={form.confirmPassword}
-                onChange={update('confirmPassword')}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="ui-btn ui-btn--primary ui-btn--block ui-btn--lg mt-6"
-          >
-            {loading && <span className="ui-spinner" aria-hidden />}
-            {loading ? 'Creating account…' : 'Register'}
-          </button>
-
-          <p className="mt-6 text-center text-sm text-ink-500">
-            Already have an account?{' '}
-            <Link to="/login" className="font-semibold text-brand-600 hover:text-brand-700 transition-colors">
-              Login
-            </Link>
-          </p>
-        </form>
-      </div>
+      <p className="mt-6 text-center text-sm text-ink-500 animate-fade-in">
+        Already have an account?{' '}
+        <Link to="/login" className="font-semibold text-brand-700 hover:underline">
+          Sign in
+        </Link>
+      </p>
     </div>
   );
 }

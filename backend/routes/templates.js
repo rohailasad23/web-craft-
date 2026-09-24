@@ -1,0 +1,478 @@
+'use strict';
+
+const crypto = require('crypto');
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+
+const asyncHandler = require('../middleware/asyncHandler');
+const verifyToken = require('../middleware/auth');
+const { requireRole, optionalAuth } = require('../middleware/auth');
+const { handleUpload } = require('../middleware/upload');
+const { SORTS, CATEGORIES } = require('../constants/catalog');
+const User = require('../models/User');
+const Template = require('../models/Template');
+const Download = require('../models/Download');
+const { makeThumbnail } = require('../services/placeholders');
+const storage = require('../services/storage');
+
+const router = express.Router();
+
+/* ------------------------------------------------------------------ helpers */
+
+const MAX_TECHS = 10;
+
+/** Accepts a real array, a JSON array string, or "React, Vue". */
+function parseTechnologies(raw) {
+  if (Array.isArray(raw)) return raw;
+  const s = String(raw || '').trim();
+  if (!s) return [];
+  if (s.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* fall through to comma splitting */
+    }
+  }
+  return s.split(',');
+}
+
+function cleanTechnologies(raw) {
+  return [...new Set(parseTechnologies(raw).map((t) => String(t).trim()).filter(Boolean))]
+    .slice(0, MAX_TECHS)
+    .map((t) => t.slice(0, 30));
+}
+
+/** Only http(s) URLs survive -- javascript: and data: are rejected. */
+function normalizeUrl(value) {
+  const s = String(value || '').trim();
+  if (!s) return '';
+  try {
+    const u = new URL(s);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Case-insensitive substring search that cannot be used as a regex DoS. */
+function safeRegex(input) {
+  const s = String(input).trim().slice(0, 80);
+  return new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+}
+
+async function uniqueSlug(title) {
+  const base = Template.slugify(title) || 'template';
+  let slug = base;
+  for (let i = 2; i <= 60; i++) {
+    if (!(await Template.exists({ slug }))) return slug;
+    slug = `${base}-${i}`;
+  }
+  return `${base}-${crypto.randomBytes(3).toString('hex')}`;
+}
+
+/** Write an SVG placeholder to disk and return its public URL. */
+function generateThumbnail(title, category) {
+  const key = `thumbnails/${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}.svg`;
+  fs.mkdirSync(path.dirname(storage.resolveKey(key)), { recursive: true });
+  fs.writeFileSync(storage.resolveKey(key), makeThumbnail(title, category), 'utf8');
+  return storage.urlFor(key);
+}
+
+/**
+ * Turn multer's `req.files` into the fields we persist.
+ * Returns `{ file, thumbnail, screenshots }`; each is `undefined` when the
+ * caller did not upload that field (so an edit does not wipe existing data).
+ */
+function collectUploads(req) {
+  const out = {};
+  const keyOf = (file) => path.relative(storage.UPLOAD_ROOT, file.path).split(path.sep).join('/');
+
+  const archive = req.files?.file?.[0];
+  const thumb = req.files?.thumbnail?.[0];
+  const shots = req.files?.screenshots || [];
+
+  if (archive) {
+    out.file = {
+      key: keyOf(archive),
+      filename: String(archive.originalname || 'template.zip').slice(0, 120),
+      size: archive.size,
+      contentType: 'application/zip',
+    };
+  }
+  if (thumb) out.thumbnail = storage.urlFor(keyOf(thumb));
+  if (shots.length) out.screenshots = shots.map((s) => storage.urlFor(keyOf(s)));
+  return out;
+}
+
+/** Extract the storage key from a public URL we generated ("/uploads/x/y"). */
+function keyFromUrl(url) {
+  const m = /^\/uploads\/(.+)$/.exec(String(url || ''));
+  return m ? m[1] : null;
+}
+
+function deleteUrls(urls) {
+  for (const u of urls || []) {
+    const key = keyFromUrl(u);
+    if (key) storage.remove(key);
+  }
+}
+
+function contentDisposition(filename) {
+  const ascii = String(filename).replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+/** Is the caller allowed to see/manage this template? */
+function canManage(template, user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  // `author` is populated on the details route, so it is a User document there
+  // and a bare ObjectId everywhere else -- read _id first, and String() a
+  // populated document directly gives "[object Object]".
+  const authorId = template.author?._id ?? template.author;
+  return !!authorId && String(authorId) === String(user.id);
+}
+
+/* ------------------------------------------------------------------- routes */
+
+/**
+ * GET /api/templates
+ *   q=        free text (title, description, category, technology, developer)
+ *   filter=   one entry of the flat chip list, or "All"
+ *   sort=     newest | popular | downloads | az
+ *   page, limit
+ */
+router.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 12));
+    const q = String(req.query.q || '').trim();
+    const filter = String(req.query.filter || '').trim();
+    const sort = SORTS.includes(req.query.sort) ? req.query.sort : 'newest';
+    const featured = req.query.featured === 'true';
+
+    const query = { status: 'approved' };
+    const and = [];
+
+    if (q) {
+      const rx = safeRegex(q);
+      and.push({
+        $or: [
+          { title: rx },
+          { description: rx },
+          { technologies: rx },
+          { category: rx },
+          { authorName: rx },
+        ],
+      });
+    }
+    // One chip can name either a category or a technology, so it matches
+    // whichever field applies -- see constants/catalog.js.
+    if (filter && filter !== 'All') {
+      and.push({ $or: [{ category: filter }, { technologies: filter }] });
+    }
+    if (and.length) query.$and = and;
+    if (featured) query.featured = true;
+
+    const sortSpec = {
+      newest: { createdAt: -1 },
+      popular: { downloadCount: -1, createdAt: -1 },
+      downloads: { downloadCount: -1, createdAt: -1 },
+      az: { title: 1 },
+    }[sort];
+
+    const [templates, total] = await Promise.all([
+      Template.find(query).sort(sortSpec).skip((page - 1) * limit).limit(limit),
+      Template.countDocuments(query),
+    ]);
+
+    res.json({
+      success: true,
+      templates,
+      total,
+      page,
+      pages: Math.max(1, Math.ceil(total / limit)),
+      hasMore: page * limit < total,
+    });
+  })
+);
+
+/**
+ * GET /api/templates/mine -- the developer's own submissions, any status.
+ * Registered before /:slug so the literal "mine" is never treated as a slug.
+ */
+router.get(
+  '/mine',
+  verifyToken,
+  requireRole('developer', 'admin'),
+  asyncHandler(async (req, res) => {
+    const templates = await Template.find({ author: req.user.id }).sort({ createdAt: -1 });
+    res.json({ success: true, templates });
+  })
+);
+
+/**
+ * POST /api/templates -- developers submit a template (multipart or JSON).
+ * Storage-first: only the file *reference* is written to MongoDB.
+ */
+router.post(
+  '/',
+  verifyToken,
+  requireRole('developer', 'admin'),
+  handleUpload,
+  asyncHandler(async (req, res) => {
+    const title = String(req.body.title || '').trim();
+    const description = String(req.body.description || '').trim();
+    const category = String(req.body.category || '').trim();
+    const technologies = cleanTechnologies(req.body.technologies);
+
+    if (!title || title.length > 120) {
+      return res.status(400).json({ error: 'Please provide a template title' });
+    }
+    if (!description || description.length < 10) {
+      return res.status(400).json({
+        error: 'Please write a description of at least 10 characters',
+      });
+    }
+    if (!CATEGORIES.includes(category)) {
+      return res.status(400).json({ error: 'Please choose a valid category' });
+    }
+    if (!technologies.length) {
+      return res.status(400).json({ error: 'Add at least one technology' });
+    }
+
+    const previewUrl = normalizeUrl(req.body.previewUrl);
+    const githubUrl = normalizeUrl(req.body.githubUrl);
+    if (previewUrl === null) return res.status(400).json({ error: 'Demo URL must be a valid http(s) URL' });
+    if (githubUrl === null) return res.status(400).json({ error: 'GitHub URL must be a valid http(s) URL' });
+
+    const uploads = collectUploads(req);
+    if (!uploads.file) {
+      return res.status(400).json({ error: 'Please upload the template .zip file' });
+    }
+
+    const author = await User.findById(req.user.id);
+    if (!author) return res.status(401).json({ error: 'Account no longer exists' });
+
+    const thumbnail = uploads.thumbnail || generateThumbnail(title, category);
+
+    const template = await Template.create({
+      title,
+      slug: await uniqueSlug(title),
+      description,
+      category,
+      technologies,
+      thumbnail,
+      screenshots: uploads.screenshots || [],
+      previewUrl: previewUrl || '',
+      githubUrl: githubUrl || '',
+      file: uploads.file,
+      author: author._id,
+      authorName: author.name,
+      // Spec §3: auto-approve for now, but `status` + the admin endpoint are
+      // already in place so moderation can be switched on later.
+      status: 'approved',
+    });
+
+    res.status(201).json({ success: true, message: 'Template published', template });
+  })
+);
+
+/**
+ * GET /api/templates/:slug -- public details page.
+ * optionalAuth adds `canEdit` for the owner/admin without requiring a login
+ * for everyone else.
+ */
+router.get(
+  '/:slug',
+  optionalAuth,
+  asyncHandler(async (req, res) => {
+    const template = await Template.findOne({ slug: req.params.slug }).populate(
+      'author',
+      'name avatar bio role createdAt'
+    );
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const visible =
+      template.status === 'approved' ||
+      canManage(template, req.user) ||
+      req.user?.role === 'admin';
+    if (!visible) return res.status(404).json({ error: 'Template not found' });
+
+    res.json({
+      success: true,
+      template,
+      canEdit: canManage(template, req.user) || req.user?.role === 'admin',
+    });
+  })
+);
+
+/**
+ * PUT /api/templates/:id -- edit metadata and/or replace files.
+ * Accepts JSON (metadata only) or multipart (metadata + new files); multer
+ * skips non-multipart bodies untouched, so both paths work through one route.
+ */
+router.put(
+  '/:id',
+  verifyToken,
+  requireRole('developer', 'admin'),
+  handleUpload,
+  asyncHandler(async (req, res) => {
+    const template = await Template.findById(req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    if (!canManage(template, req.user) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only edit your own templates' });
+    }
+
+    const updates = {};
+    if (req.body.title !== undefined) {
+      const title = String(req.body.title).trim();
+      if (!title) return res.status(400).json({ error: 'Title cannot be empty' });
+      updates.title = title.slice(0, 120);
+    }
+    if (req.body.description !== undefined) {
+      const d = String(req.body.description).trim();
+      if (d.length < 10) {
+        return res.status(400).json({ error: 'Description must be at least 10 characters' });
+      }
+      updates.description = d.slice(0, 4000);
+    }
+    if (req.body.category !== undefined) {
+      if (!CATEGORIES.includes(req.body.category)) {
+        return res.status(400).json({ error: 'Please choose a valid category' });
+      }
+      updates.category = req.body.category;
+    }
+    if (req.body.technologies !== undefined) {
+      const techs = cleanTechnologies(req.body.technologies);
+      if (!techs.length) return res.status(400).json({ error: 'Add at least one technology' });
+      updates.technologies = techs;
+    }
+    if (req.body.previewUrl !== undefined) {
+      const u = normalizeUrl(req.body.previewUrl);
+      if (u === null) return res.status(400).json({ error: 'Demo URL must be a valid http(s) URL' });
+      updates.previewUrl = u;
+    }
+    if (req.body.githubUrl !== undefined) {
+      const u = normalizeUrl(req.body.githubUrl);
+      if (u === null) return res.status(400).json({ error: 'GitHub URL must be a valid http(s) URL' });
+      updates.githubUrl = u;
+    }
+
+    const uploads = collectUploads(req);
+    const stale = [];
+
+    if (uploads.file) {
+      if (template.file?.key) stale.push(storage.urlFor(template.file.key));
+      updates.file = uploads.file;
+    }
+    if (uploads.thumbnail) {
+      if (template.thumbnail) stale.push(template.thumbnail);
+      updates.thumbnail = uploads.thumbnail;
+    }
+    if (uploads.screenshots) {
+      stale.push(...template.screenshots);
+      updates.screenshots = uploads.screenshots;
+    }
+
+    Object.assign(template, updates);
+    await template.save();
+
+    // Only unlink old files once the new document is safely persisted.
+    deleteUrls(stale);
+
+    res.json({ success: true, message: 'Template updated', template });
+  })
+);
+
+/**
+ * DELETE /api/templates/:id -- owner or admin.
+ * Removes the stored archive, images and every download row.
+ */
+router.delete(
+  '/:id',
+  verifyToken,
+  requireRole('developer', 'admin'),
+  asyncHandler(async (req, res) => {
+    const template = await Template.findById(req.params.id);
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+    if (!canManage(template, req.user) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'You can only delete your own templates' });
+    }
+
+    await Promise.all([
+      Template.deleteOne({ _id: template._id }),
+      Download.deleteMany({ templateId: template._id }),
+    ]);
+
+    deleteUrls([
+      template.thumbnail,
+      ...(template.screenshots || []),
+      template.file?.key ? storage.urlFor(template.file.key) : null,
+    ].filter(Boolean));
+
+    res.json({ success: true, message: 'Template deleted' });
+  })
+);
+
+/**
+ * POST /api/templates/:slug/download -- spec §9:
+ * verify login -> record the download -> increment -> start the file download.
+ *
+ * The (userId, templateId) unique index makes double-clicks harmless: we only
+ * $inc when we were the ones who inserted the row.
+ */
+router.post(
+  '/:slug/download',
+  (req, res, next) => {
+    // Distinct, human message for the most common failure (spec §19).
+    if (!req.headers.authorization) {
+      return res.status(401).json({ error: 'Please log in to download this template.' });
+    }
+    next();
+  },
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const template = await Template.findOne({ slug: req.params.slug });
+    if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+    if (!template.file?.key) {
+      return res.status(404).json({ error: 'No file is attached to this template' });
+    }
+
+    let isNewDownload = false;
+    try {
+      await Download.create({ userId: req.user.id, templateId: template._id });
+      isNewDownload = true;
+    } catch (err) {
+      if (err?.code !== 11000) throw err; // 11000 = already downloaded, not an error
+    }
+
+    if (isNewDownload) {
+      await Template.updateOne({ _id: template._id }, { $inc: { downloadCount: 1 } });
+    }
+
+    const abs = storage.resolveKey(template.file.key);
+    if (!fs.existsSync(abs)) {
+      return res.status(404).json({ error: 'The file is no longer available' });
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', contentDisposition(template.file.filename || `${template.slug}.zip`));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    const stream = fs.createReadStream(abs);
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500);
+      res.end();
+    });
+    res.on('close', () => stream.destroy());
+    stream.pipe(res);
+  })
+);
+
+module.exports = router;

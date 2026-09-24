@@ -27,6 +27,9 @@ const LOCAL_BINARY_VERSION = process.env.LOCAL_MONGO_VERSION || '7.0.21';
 const LOCAL_DB_PATH =
   process.env.LOCAL_DB_PATH || path.join(__dirname, '..', '.data', 'mongo');
 const LOCAL_PORT = Number(process.env.LOCAL_DB_PORT || 27017);
+// Separate databases for the dev server and the smoke test -- both are stored
+// under backend/.data/ and neither can see the other's documents.
+const LOCAL_DB_NAME = process.env.LOCAL_DB_NAME || 'web-craft';
 
 // Short on purpose: in `auto` mode a blocked Atlas costs startup time on
 // every boot, so fail over quickly rather than making `npm run dev` feel hung.
@@ -80,10 +83,47 @@ async function tryAtlas() {
 }
 
 async function connectLocal() {
-  const uri = await startLocalMongo();
-  await mongoose.connect(uri, { ...CONNECT_OPTIONS, dbName: 'landing-builder' });
-  console.log('✅ Connected to local MongoDB (data in backend/.data/mongo)');
+  const uri = `mongodb://127.0.0.1:${LOCAL_PORT}/${LOCAL_DB_NAME}`;
+
+  // A mongod may already be running on this port with this data directory --
+  // left by a previous run, or by `npm run seed` / the smoke test. Starting a
+  // second one fails on the WiredTiger lock ("DBPathInUse"), so reuse the one
+  // that is already up instead of fighting it for the lock.
+  try {
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 1500 });
+    console.log(`✅ Reusing the local MongoDB already listening on :${LOCAL_PORT}`);
+    return 'local';
+  } catch {
+    // Nothing answered -- fall through and start our own instance.
+  }
+
+  const started = await startLocalMongoWithRetry();
+  await mongoose.connect(started, { ...CONNECT_OPTIONS, dbName: LOCAL_DB_NAME });
+  console.log(`✅ Connected to local MongoDB (data in backend/.data/mongo, db "${LOCAL_DB_NAME}")`);
   return 'local';
+}
+
+/**
+ * Start mongod, retrying a couple of times.
+ *
+ * The only startup failure we expect is DBPathInUSE -- a mongod from the run
+ * we just killed still releasing the lock. That clears in well under a second,
+ * and without this retry the user sees a hard crash on every restart.
+ */
+async function startLocalMongoWithRetry(attempts = 4) {
+  let lastError;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await startLocalMongo();
+    } catch (err) {
+      lastError = err;
+      const locked = /DBPathInUse|lock file/i.test(String(err.message || ''));
+      if (!locked || i === attempts - 1) break;
+      console.log(`⏳ Local data directory still locked, retrying (${i + 2}/${attempts})…`);
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  throw lastError;
 }
 
 async function connectDB() {

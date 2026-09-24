@@ -1,15 +1,26 @@
-// frontend/src/App.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+
 import Home from './pages/Home';
-import Generate from './pages/Generate';
-import Editor from './pages/Editor';
+import Templates from './pages/Templates';
+import TemplateDetails from './pages/TemplateDetails';
+import Developers from './pages/Developers';
+import DeveloperProfile from './pages/DeveloperProfile';
 import Dashboard from './pages/Dashboard';
+import MyDownloads from './pages/MyDownloads';
+import Profile from './pages/Profile';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 import Navbar from './components/Common/Navbar';
 import ErrorBoundary from './components/Common/ErrorBoundary';
+import { ToastProvider } from './components/Common/Toast';
+import { SessionContext } from './lib/session';
+import { loadCatalog } from './lib/catalog';
+
+import DeveloperDashboard from './pages/developer/Dashboard';
+import MyTemplates from './pages/developer/MyTemplates';
+import UploadTemplate from './pages/developer/Upload';
 
 /** Read persisted session state; never trust that localStorage is valid. */
 function readSession() {
@@ -28,11 +39,14 @@ function readSession() {
   }
 }
 
+/** Roles allowed on each guarded area (spec §4). */
+const DEVELOPER_ROLES = ['developer', 'admin'];
+
 /**
  * Everything that needs router context. It must live *inside* <Router> --
  * calling useLocation() in the parent would throw and blank the page.
  */
-function AppShell({ session, onLogin, onLogout }) {
+function AppShell({ session, onLogin, onLogout, onRefresh }) {
   const location = useLocation();
 
   // Fired by the shared axios client when the API rejects the token.
@@ -42,105 +56,144 @@ function AppShell({ session, onLogin, onLogout }) {
     return () => window.removeEventListener('auth:expired', handleExpired);
   }, [onLogout]);
 
-  // Routes are not scroll-restored by default: landing on /login while the
-  // long Home page was scrolled to the bottom opened the form mid-screen.
+  // Fetch the taxonomy once for the whole session.
   useEffect(() => {
-    window.scrollTo(0, 0);
+    loadCatalog();
+  }, []);
+
+  // Scroll to the top on navigation; otherwise a detail page opens mid-scroll.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
   }, [location.pathname]);
 
-  const { isAuthenticated, user } = session;
-
-  // The editor is a full-screen, app-like surface with its own toolbar (and a
-  // back button), so the global navbar would only add a second scroll bar.
-  const isEditor = location.pathname.startsWith('/editor/');
+  const contextValue = {
+    ...session,
+    login: onLogin,
+    logout: onLogout,
+    refresh: onRefresh,
+  };
 
   return (
-    <div className="min-h-screen bg-ink-50">
-      {isAuthenticated && !isEditor && <Navbar user={user} onLogout={onLogout} />}
+    <SessionContext.Provider value={contextValue}>
+      <div className="flex min-h-screen flex-col bg-ink-50 font-sans text-ink-900 antialiased">
+        <Navbar />
+        <div className="flex-1">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/templates/:slug" element={<TemplateDetails />} />
+            <Route path="/developers" element={<Developers />} />
+            <Route path="/developers/:id" element={<DeveloperProfile />} />
 
-      {/* Keyed wrapper gives each route a soft entrance transition. */}
-      <div key={location.pathname} className="animate-fade-in">
-        <Routes location={location}>
-          {/* Public Routes */}
-          <Route
-            path="/"
-            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Home />}
-          />
-          <Route
-            path="/login"
-            element={
-              isAuthenticated ? (
-                <Navigate to="/dashboard" replace />
-              ) : (
-                <Login onAuth={onLogin} />
-              )
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              isAuthenticated ? (
-                <Navigate to="/dashboard" replace />
-              ) : (
-                <Register onAuth={onLogin} />
-              )
-            }
-          />
+            <Route path="/login" element={<Login onAuth={onLogin} />} />
+            <Route path="/register" element={<Register onAuth={onLogin} />} />
 
-          {/* Protected Routes */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/generate"
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <Generate />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/editor/:id"
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
-                <Editor />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/downloads"
+              element={
+                <ProtectedRoute>
+                  <MyDownloads />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Catch All */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            {/* Developer-only (spec §16) */}
+            <Route
+              path="/developer"
+              element={
+                <ProtectedRoute roles={DEVELOPER_ROLES}>
+                  <DeveloperDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/developer/templates"
+              element={
+                <ProtectedRoute roles={DEVELOPER_ROLES}>
+                  <MyTemplates />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/developer/upload"
+              element={
+                <ProtectedRoute roles={DEVELOPER_ROLES}>
+                  <UploadTemplate />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/developer/upload/:id"
+              element={
+                <ProtectedRoute roles={DEVELOPER_ROLES}>
+                  <UploadTemplate />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Anything unknown: home, so a stale bookmark never dead-ends. */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
       </div>
-    </div>
+    </SessionContext.Provider>
   );
 }
 
-function App() {
+export default function App() {
   const [session, setSession] = useState(readSession);
 
-  const handleLogin = useCallback((user) => {
-    setSession({ isAuthenticated: true, user });
+  const onLogin = useCallback((user, token) => {
+    if (token) localStorage.setItem('token', token);
+    if (user) localStorage.setItem('user', JSON.stringify(user));
+    setSession({ isAuthenticated: true, user: user || readSession().user });
   }, []);
 
-  const handleLogout = useCallback(() => {
+  const onLogout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setSession({ isAuthenticated: false, user: null });
   }, []);
 
+  // Re-read /api/auth/me so a role change or profile edit is reflected
+  // everywhere without forcing a reload.
+  const onRefresh = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+    try {
+      const { default: api } = await import('./lib/api');
+      const res = await api.get('/api/auth/me');
+      localStorage.setItem('user', JSON.stringify(res.data.user));
+      setSession({ isAuthenticated: true, user: res.data.user });
+      return res.data.user;
+    } catch {
+      return null;
+    }
+  }, []);
+
   return (
     <ErrorBoundary>
       <Router>
-        <AppShell session={session} onLogin={handleLogin} onLogout={handleLogout} />
+        <ToastProvider>
+          <AppShell session={session} onLogin={onLogin} onLogout={onLogout} onRefresh={onRefresh} />
+        </ToastProvider>
       </Router>
     </ErrorBoundary>
   );
 }
-
-export default App;

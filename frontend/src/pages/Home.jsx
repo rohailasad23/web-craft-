@@ -1,256 +1,353 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import api from '../lib/api';
+import { useCatalog } from '../lib/catalog';
+import { useSession } from '../lib/session';
+import { formatCount, initials } from '../lib/format';
+import TemplateCard from '../components/Templates/TemplateCard';
+import { TemplateGridSkeleton, StatSkeleton } from '../components/Common/Skeletons';
+import Footer from '../components/Common/Footer';
 
-const FEATURES = [
-  {
-    icon: '✨',
-    title: 'AI writes the copy',
-    body: 'Describe your business in one line and get a complete hero, features and CTA — in seconds.',
-  },
-  {
-    icon: '🎨',
-    title: 'Edit everything live',
-    body: 'Change colours, sections and text in the editor. The preview updates as you type.',
-  },
-  {
-    icon: '📱',
-    title: 'Responsive by default',
-    body: 'Every generated page is built mobile-first, so it looks right on any screen.',
-  },
-  {
-    icon: '⚡',
-    title: 'Publish in one click',
-    body: 'Ship it to a shareable URL instantly — no build step, no hosting setup.',
-  },
-  {
-    icon: '💳',
-    title: 'Client payments built in',
-    body: 'Connect Razorpay and let clients pay for the page directly from the published link.',
-  },
-  {
-    icon: '🔒',
-    title: 'Safe to embed',
-    body: 'Published pages are sanitised and served with a strict Content-Security-Policy.',
-  },
-];
-
-const STEPS = [
-  { n: '01', title: 'Describe', body: 'Tell the builder what your business does.' },
-  { n: '02', title: 'Generate', body: 'AI drafts the sections, copy and images.' },
-  { n: '03', title: 'Refine', body: 'Tweak anything in the visual editor.' },
-  { n: '04', title: 'Publish', body: 'Share the link or take payment.' },
-];
-
+/**
+ * Discovery homepage (spec §7): hero + search, category entry points, featured,
+ * latest and popular templates, and a contributor section.
+ */
 export default function Home() {
+  const navigate = useNavigate();
+  const { isAuthenticated, user } = useSession();
+  const { categories, ready } = useCatalog();
+
+  const [term, setTerm] = useState('');
+  const [featured, setFeatured] = useState(null);
+  const [latest, setLatest] = useState(null);
+  const [popular, setPopular] = useState(null);
+  const [developers, setDevelopers] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const get = (url) => api.get(url).then((r) => r.data);
+
+    Promise.all([
+      get('/api/templates?featured=true&limit=4'),
+      get('/api/templates?sort=newest&limit=4'),
+      get('/api/templates?sort=downloads&limit=4'),
+      get('/api/developers?limit=6'),
+    ])
+      .then(([f, l, p, d]) => {
+        if (!alive) return;
+        setFeatured(f.templates);
+        setLatest(l.templates);
+        setPopular(p.templates);
+        setDevelopers(d.developers);
+      })
+      .catch(() => alive && setFailed(true));
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const submit = (event) => {
+    event.preventDefault();
+    navigate(term.trim() ? `/templates?q=${encodeURIComponent(term.trim())}` : '/templates');
+  };
+
+  const goCategory = useCallback(
+    (c) => navigate(`/templates?filter=${encodeURIComponent(c)}`),
+    [navigate]
+  );
+
+  const loading = !failed && latest === null;
+
   return (
-    <div className="min-h-screen bg-ink-50 text-ink-900 overflow-x-hidden">
-      {/* ---------- Top bar ---------- */}
-      <header className="relative z-20 animate-slide-down">
-        <div className="mx-auto max-w-6xl px-6 py-5 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-white text-lg shadow-soft transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110">
-              ⚡
-            </span>
-            <span className="text-lg font-extrabold tracking-tight">LP Builder</span>
-          </Link>
-
-          <nav className="flex items-center gap-6">
-            <Link to="/login" className="ui-navlink hidden sm:block">
-              Login
-            </Link>
-            <Link to="/register" className="ui-btn ui-btn--primary">
-              Get started
-            </Link>
-          </nav>
-        </div>
-      </header>
-
-      {/* ---------- Hero ---------- */}
-      <section className="relative">
-        {/* animated backdrop */}
-        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -left-40 h-[28rem] w-[28rem] rounded-full bg-brand-400/30 blur-3xl animate-float" />
-          <div className="absolute top-32 -right-32 h-[24rem] w-[24rem] rounded-full bg-purple-400/30 blur-3xl animate-float-slow" />
-          <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-sky-300/30 blur-3xl animate-float" />
-          {/* subtle grid */}
+    <div>
+      {/* ---------------------------------------------------------- hero */}
+      <section className="relative overflow-hidden border-b border-ink-100 bg-white">
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-40 -top-40 h-[28rem] w-[28rem] rounded-full bg-brand-200/45 blur-3xl animate-float" />
+          <div className="absolute -right-32 top-24 h-96 w-96 rounded-full bg-purple-200/40 blur-3xl animate-float [animation-delay:-3s]" />
           <div
             className="absolute inset-0 opacity-[0.35]"
             style={{
               backgroundImage:
-                'linear-gradient(to right, rgba(15,23,42,.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,.06) 1px, transparent 1px)',
-              backgroundSize: '56px 56px',
-              maskImage: 'radial-gradient(ellipse 70% 60% at 50% 35%, black, transparent)',
+                'linear-gradient(to right, rgba(99,102,241,.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(99,102,241,.12) 1px, transparent 1px)',
+              backgroundSize: '44px 44px',
+              maskImage: 'radial-gradient(ellipse at 50% 0%, black, transparent 72%)',
             }}
           />
         </div>
 
-        <div className="relative mx-auto max-w-5xl px-6 pt-16 pb-24 text-center sm:pt-24">
-          <span className="ui-eyebrow animate-fade-up">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-500 animate-ping" />
-            AI landing page builder
-          </span>
-
-          <h1 className="ui-title mt-6 text-5xl sm:text-6xl lg:text-7xl animate-fade-up [animation-delay:.08s]">
-            AI generates it.
-            <br />
-            You customize it.{' '}
-            <span className="bg-gradient-to-r from-brand-500 via-brand-600 to-purple-600 bg-[length:200%_auto] bg-clip-text text-transparent animate-gradient-x">
-              Clients pay for it.
+        <div className="relative mx-auto max-w-4xl px-5 pb-20 pt-16 text-center sm:px-6 sm:pt-24">
+          <span className="ui-eyebrow animate-fade-up">Template marketplace</span>
+          <h1 className="mt-5 animate-fade-up text-4xl font-extrabold leading-[1.06] tracking-tight text-ink-900 [animation-delay:.08s] sm:text-6xl">
+            Discover, download &amp;
+            <span className="block bg-gradient-to-r from-brand-600 via-brand-500 to-purple-500 bg-clip-text text-transparent">
+              ship websites faster
             </span>
           </h1>
-
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-ink-500 animate-fade-up [animation-delay:.16s]">
-            Describe your business once — get a complete, editable, publishable landing page.
-            No design skills, no boilerplate, no waiting on a developer.
+          <p className="mx-auto mt-5 max-w-2xl animate-fade-up text-base leading-relaxed text-ink-500 [animation-delay:.16s] sm:text-lg">
+            A community library of ready-made templates for developers and creators. Browse by
+            category or technology, preview before you commit, and download the source in one
+            click.
           </p>
 
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-4 animate-fade-up [animation-delay:.24s]">
-            <Link to="/register" className="ui-btn ui-btn--primary ui-btn--lg group">
-              Start building free
-              <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
+          <form
+            onSubmit={submit}
+            className="mx-auto mt-8 flex max-w-xl animate-fade-up gap-2 [animation-delay:.24s]"
+          >
+            <input
+              type="search"
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder="Search “portfolio”, “React”, “dashboard”…"
+              aria-label="Search templates"
+              className="ui-input !py-3.5"
+            />
+            <button type="submit" className="ui-btn ui-btn--primary !px-6 !py-3.5 shrink-0">
+              Search
+            </button>
+          </form>
+
+          <div className="mt-8 flex animate-fade-up flex-col items-center justify-center gap-3 [animation-delay:.32s] sm:flex-row">
+            <Link to="/templates" className="ui-btn ui-btn--lg">
+              Browse all templates
             </Link>
-            <Link to="/login" className="ui-btn ui-btn--ghost ui-btn--lg">
-              I already have an account
-            </Link>
+            {!isAuthenticated ? (
+              <Link to="/register" className="ui-btn ui-btn--soft !px-6 !py-3.5">
+                Become a developer
+              </Link>
+            ) : user?.role === 'user' ? (
+              <Link to="/dashboard" className="ui-btn ui-btn--soft !px-6 !py-3.5">
+                Go to dashboard
+              </Link>
+            ) : (
+              <Link to="/developer/upload" className="ui-btn ui-btn--success !px-6 !py-3.5">
+                <span aria-hidden>＋</span> Upload a template
+              </Link>
+            )}
           </div>
 
-          <p className="mt-5 text-sm text-ink-500 animate-fade-up [animation-delay:.32s]">
-            No credit card required
-          </p>
+          {ready && categories?.length > 0 && (
+            <div className="stagger mt-9 flex flex-wrap justify-center gap-2">
+              {categories.slice(0, 5).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => goCategory(c)}
+                  className="rounded-full border border-ink-200 bg-white/80 px-4 py-1.5 text-sm font-semibold text-ink-700 backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:border-brand-400 hover:text-brand-700 hover:shadow-soft"
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
 
-          {/* mock preview window */}
-          <div className="relative mx-auto mt-16 max-w-3xl animate-pop-in [animation-delay:.4s]">
-            <div className="ui-card overflow-hidden !rounded-2xl">
-              <div className="flex items-center gap-1.5 border-b border-ink-100 bg-ink-50 px-4 py-3">
-                <span className="h-3 w-3 rounded-full bg-red-400" />
-                <span className="h-3 w-3 rounded-full bg-amber-400" />
-                <span className="h-3 w-3 rounded-full bg-emerald-400" />
-                <span className="ml-3 h-5 flex-1 rounded-md bg-white text-[11px] leading-5 text-ink-500">
-                  yoursite.com
-                </span>
-              </div>
-              <div className="space-y-3 p-6 text-left">
-                <div className="ui-skeleton h-4 w-24" />
-                <div className="ui-skeleton h-7 w-3/4" />
-                <div className="ui-skeleton h-3 w-full" />
-                <div className="ui-skeleton h-3 w-5/6" />
-                <div className="flex gap-3 pt-2">
-                  <div className="ui-skeleton h-9 w-32 rounded-lg" />
-                  <div className="ui-skeleton h-9 w-24 rounded-lg" />
-                </div>
-                <div className="grid grid-cols-3 gap-3 pt-3">
-                  <div className="ui-skeleton h-16 rounded-xl" />
-                  <div className="ui-skeleton h-16 rounded-xl" />
-                  <div className="ui-skeleton h-16 rounded-xl" />
-                </div>
-              </div>
+      <main className="mx-auto max-w-7xl px-5 sm:px-6">
+        {failed && (
+          <div className="ui-alert ui-alert--error mt-8">
+            Could not reach the API. Is the backend running on port 8080?
+          </div>
+        )}
+
+        {/* ------------------------------------------------ categories */}
+        {ready && categories?.length > 0 && (
+          <section className="mt-14" aria-labelledby="categories-heading">
+            <SectionHeading
+              id="categories-heading"
+              eyebrow="Browse"
+              title="Popular categories"
+              action={{ to: '/templates', label: 'View all' }}
+            />
+            <div className="stagger mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {categories.map((c, i) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => goCategory(c)}
+                  className="ui-card ui-card--hover group p-5 text-left"
+                >
+                  <span
+                    className="grid h-11 w-11 place-items-center rounded-xl text-lg transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6"
+                    style={{ background: CATEGORY_TINTS[i % CATEGORY_TINTS.length] }}
+                    aria-hidden
+                  >
+                    {CATEGORY_ICONS[i % CATEGORY_ICONS.length]}
+                  </span>
+                  <span className="mt-3.5 block text-sm font-bold text-ink-900 group-hover:text-brand-700">
+                    {c}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-ink-500">Explore →</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* -------------------------------------------------- featured */}
+        <TemplateSection
+          id="featured-heading"
+          eyebrow="Hand-picked"
+          title="Featured templates"
+          items={featured}
+          loading={loading}
+        />
+
+        {/* ---------------------------------------------------- latest */}
+        <TemplateSection
+          id="latest-heading"
+          eyebrow="Fresh"
+          title="Latest templates"
+          items={latest}
+          loading={loading}
+          action={{ to: '/templates?sort=newest', label: 'All latest' }}
+        />
+
+        {/* -------------------------------------------------- popular */}
+        <TemplateSection
+          id="popular-heading"
+          eyebrow="Community favourites"
+          title="Most downloaded"
+          items={popular}
+          loading={loading}
+          action={{ to: '/templates?sort=downloads', label: 'All popular' }}
+        />
+
+        {/* ----------------------------------------------- developers */}
+        <section className="mt-16" aria-labelledby="developers-heading">
+          <SectionHeading
+            id="developers-heading"
+            eyebrow="Community"
+            title="Meet the contributors"
+            action={{ to: '/developers', label: 'All developers' }}
+          />
+
+          {loading ? (
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 3 }, (_, i) => (
+                <StatSkeleton key={i} />
+              ))}
+            </div>
+          ) : (
+            <div className="stagger mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {(developers || []).map((d) => (
+                <Link
+                  key={d.id}
+                  to={`/developers/${d.id}`}
+                  className="ui-card ui-card--hover group flex items-center gap-4 p-5"
+                >
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white shadow-soft">
+                    {initials(d.name)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-ink-900 group-hover:text-brand-700">
+                      {d.name}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-ink-500">
+                      {d.templateCount} template{d.templateCount === 1 ? '' : 's'} ·{' '}
+                      {formatCount(d.totalDownloads)} downloads
+                    </span>
+                  </span>
+                  <span aria-hidden className="text-ink-500 transition-transform group-hover:translate-x-1">
+                    →
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {!loading && (developers || []).length === 0 && (
+            <p className="ui-alert ui-alert--info mt-6">No developers have joined yet.</p>
+          )}
+        </section>
+
+        {/* -------------------------------------------------- CTA band */}
+        <section className="relative mt-16 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-purple-800 px-6 py-12 text-center shadow-lift sm:px-12">
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-20">
+            <div className="absolute -left-16 -top-16 h-64 w-64 rounded-full bg-white blur-3xl" />
+            <div className="absolute -bottom-20 -right-10 h-72 w-72 rounded-full bg-purple-300 blur-3xl" />
+          </div>
+          <div className="relative">
+            <h2 className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+              Have a template to share?
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-white/85 sm:text-base">
+              Register as a developer, upload your archive and screenshots, and let the community
+              download your work.
+            </p>
+            <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Link
+                to={isAuthenticated ? '/developer/upload' : '/register'}
+                className="ui-btn !bg-white !px-6 !py-3 !text-brand-700 hover:!bg-brand-50"
+              >
+                <span aria-hidden>＋</span>{' '}
+                {isAuthenticated ? 'Upload a template' : 'Start contributing'}
+              </Link>
+              <Link
+                to="/templates"
+                className="ui-btn !border !border-white/40 !bg-transparent !px-6 !py-3 !text-white hover:!bg-white/10"
+              >
+                Explore first
+              </Link>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      {/* ---------- Features ---------- */}
-      <section className="mx-auto max-w-6xl px-6 py-20">
-        <div className="mx-auto max-w-2xl text-center">
-          <span className="ui-eyebrow">Features</span>
-          <h2 className="ui-title mt-3 text-3xl sm:text-4xl">
-            Everything you need, nothing you don&apos;t
-          </h2>
-        </div>
+      <Footer />
+    </div>
+  );
+}
 
-        <div className="stagger mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {FEATURES.map((f) => (
-            <article key={f.title} className="ui-card ui-card--hover group p-6">
-              <div className="grid h-12 w-12 place-items-center rounded-xl bg-brand-50 text-2xl transition-all duration-500 group-hover:scale-110 group-hover:bg-brand-100 group-hover:-rotate-6">
-                {f.icon}
-              </div>
-              <h3 className="mt-4 text-base font-bold tracking-tight">{f.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-500">{f.body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+const CATEGORY_ICONS = ['🎨', '🛍', '🚀', '📊', '✍️'];
+const CATEGORY_TINTS = [
+  'rgba(99,102,241,.14)',
+  'rgba(244,63,94,.14)',
+  'rgba(14,165,233,.14)',
+  'rgba(16,185,129,.14)',
+  'rgba(139,92,246,.14)',
+];
 
-      {/* ---------- How it works ---------- */}
-      <section className="relative border-y border-ink-100 bg-white py-20">
-        <div className="mx-auto max-w-6xl px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <span className="ui-eyebrow">How it works</span>
-            <h2 className="ui-title mt-3 text-3xl sm:text-4xl">From idea to live in four steps</h2>
-          </div>
+function SectionHeading({ eyebrow, title, action, id }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <span className="ui-eyebrow">{eyebrow}</span>
+        <h2 id={id} className="ui-title mt-2 text-2xl sm:text-3xl">
+          {title}
+        </h2>
+      </div>
+      {action && (
+        <Link
+          to={action.to}
+          className="text-sm font-semibold text-brand-700 transition-colors hover:text-brand-800"
+        >
+          {action.label} →
+        </Link>
+      )}
+    </div>
+  );
+}
 
-          <div className="stagger mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {STEPS.map((s, i) => (
-              <div key={s.n} className="group relative">
-                <div className="flex items-center gap-3">
-                  <span className="grid h-11 w-11 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-extrabold text-white shadow-soft transition-transform duration-500 group-hover:scale-110 group-hover:-translate-y-1">
-                    {s.n}
-                  </span>
-                  {i < STEPS.length - 1 && (
-                    <span className="hidden h-px flex-1 bg-gradient-to-r from-brand-200 to-transparent lg:block" />
-                  )}
-                </div>
-                <h3 className="mt-4 text-lg font-bold tracking-tight">{s.title}</h3>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{s.body}</p>
-              </div>
+function TemplateSection({ id, eyebrow, title, items, loading, action }) {
+  if (!loading && (!items || items.length === 0)) return null;
+
+  return (
+    <section className="mt-16" aria-labelledby={id}>
+      <SectionHeading eyebrow={eyebrow} title={title} action={action} id={id} />
+      <div className="mt-6">
+        {loading ? (
+          <TemplateGridSkeleton count={4} />
+        ) : (
+          <div className="stagger grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {items.map((t) => (
+              <TemplateCard key={t._id || t.slug} template={t} />
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* ---------- CTA ---------- */}
-      <section className="mx-auto max-w-6xl px-6 py-20">
-        <div className="animate-fade-up relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-purple-800 bg-[length:200%_200%] animate-gradient-x px-8 py-16 text-center text-white shadow-lift">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-2xl animate-float"
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -bottom-28 -left-20 h-72 w-72 rounded-full bg-white/10 blur-2xl animate-float-slow"
-          />
-
-          <div className="relative">
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Ready to ship your first page?
-            </h2>
-            <p className="mx-auto mt-3 max-w-xl text-white/80">
-              Create an account and generate a full landing page in under a minute.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-4">
-              <Link
-                to="/register"
-                className="ui-btn ui-btn--lg bg-white text-brand-700 hover:bg-brand-50"
-              >
-                Create free account
-              </Link>
-              <Link
-                to="/login"
-                className="ui-btn ui-btn--lg border border-white/40 text-white hover:bg-white/10"
-              >
-                Sign in
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ---------- Footer ---------- */}
-      <footer className="border-t border-ink-100 bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-8 flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <p className="text-sm text-ink-500">
-            © {new Date().getFullYear()} LP Builder. Built with the MERN stack.
-          </p>
-          <div className="flex items-center gap-6">
-            <Link to="/login" className="ui-navlink">
-              Login
-            </Link>
-            <Link to="/register" className="ui-navlink">
-              Register
-            </Link>
-          </div>
-        </div>
-      </footer>
-    </div>
+        )}
+      </div>
+    </section>
   );
 }

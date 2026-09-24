@@ -2,8 +2,16 @@
 
 const jwt = require('jsonwebtoken');
 const { requireSecret } = require('../utils/secrets');
+const User = require('../models/User');
 
-const authMiddleware = (req, res, next) => {
+/**
+ * Verifies the bearer token.
+ *
+ * The payload carries only { id, email, role } and is signed by us. The role is
+ * NEVER taken from the request body -- spec §13 forbids trusting role info that
+ * originates on the client, and a body field would be attacker-controlled.
+ */
+function verifyToken(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
 
@@ -27,6 +35,57 @@ const authMiddleware = (req, res, next) => {
     }
     return res.status(401).json({ error: 'Invalid token' });
   }
-};
+}
 
-module.exports = authMiddleware;
+/**
+ * Role guard. The role is re-read from the database rather than trusted from
+ * the token payload, so promoting or demoting someone takes effect on their
+ * very next request instead of when their 7-day token expires.
+ *
+ *   router.post('/', verifyToken, requireRole('developer', 'admin'), handler)
+ */
+function requireRole(...roles) {
+  return async (req, res, next) => {
+    if (!req.user?.id) return res.status(401).json({ error: 'Authentication required' });
+
+    try {
+      const user = await User.findById(req.user.id).select('role').lean();
+      if (!user) return res.status(401).json({ error: 'Account no longer exists' });
+      if (!roles.includes(user.role)) {
+        return res
+          .status(403)
+          .json({ error: 'You do not have permission to perform this action' });
+      }
+      req.user.role = user.role;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+}
+
+/**
+ * Verifies the token when one is present, otherwise continues anonymously.
+ * Used by public detail pages that only need `canEdit` for the owner.
+ * A bad/expired token degrades to "logged out" instead of 401 -- the client's
+ * interceptor already handles the real logout.
+ */
+function optionalAuth(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) return next();
+
+  try {
+    req.user = jwt.verify(
+      header.slice(7),
+      process.env.JWT_SECRET || requireSecret('JWT_SECRET')
+    );
+  } catch {
+    // Expired/garbage token: treat the caller as anonymous. The real logout is
+    // handled by the client's 401 interceptor, not by failing a public page.
+  }
+  return next();
+}
+
+module.exports = verifyToken;
+module.exports.requireRole = requireRole;
+module.exports.optionalAuth = optionalAuth;

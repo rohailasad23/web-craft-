@@ -11,9 +11,8 @@ const rateLimit = require('express-rate-limit');
 dotenv.config();
 
 const { requireSecret } = require('./utils/secrets');
-const asyncHandler = require('./middleware/asyncHandler');
 const { connectDB, disconnectDB } = require('./services/database');
-const LandingPage = require('./models/LandingPage');
+const storage = require('./services/storage');
 
 // ===== FAIL FAST ON BAD CONFIGURATION =====
 // Resolve these once at boot. Previously each fell back to a hardcoded
@@ -83,47 +82,36 @@ app.use('/api/auth/register', authLimiter);
 mongoose.connection.on('error', (err) => console.error('❌ MongoDB error:', err.message));
 
 // ===== ROUTES =====
-const authMiddleware = require('./middleware/auth');
+const verifyToken = require('./middleware/auth');
 
 app.use('/api/auth', require('./routes/auth'));
-app.use('/api/generator', authMiddleware, require('./routes/generator'));
-app.use('/api/editor', authMiddleware, require('./routes/editor'));
-app.use('/api/pages', authMiddleware, require('./routes/pages'));
-app.use('/api/payment', authMiddleware, require('./routes/payment'));
-app.use('/api/admin', authMiddleware, require('./routes/admin'));
+app.use('/api/users', require('./routes/users'));
+app.use('/api/meta', require('./routes/meta'));
+app.use('/api/templates', require('./routes/templates'));
+app.use('/api/developers', require('./routes/developers'));
+app.use('/api/admin', require('./routes/admin'));
 
-// ===== PUBLIC PUBLISHED PAGES =====
-// Pages link to /sites/:id after publishing; this route did not exist, so
-// every published URL was a 404.
-app.get(
-  '/sites/:id',
-  asyncHandler(async (req, res) => {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(404).type('text/plain').send('Not found');
-    }
-
-    const page = await LandingPage.findById(req.params.id);
-    if (!page || page.status !== 'published' || !page.htmlOutput) {
-      return res.status(404).type('text/plain').send('Not found');
-    }
-
-    res
-      .status(200)
-      .type('html')
-      .set({
-        'Content-Type': 'text/html; charset=utf-8',
-        'X-Content-Type-Options': 'nosniff',
-        // Defense in depth: even if escaping ever missed a character, the
-        // published page cannot execute a script.
-        'Content-Security-Policy':
-          "default-src 'self' https: data:; " +
-          "style-src 'unsafe-inline'; " +
-          "script-src 'none'; script-src-attr 'none'; " +
-          "img-src 'self' https: data:; " +
-          "font-src 'self' https: data:; " +
-          "object-src 'none'; base-uri 'self'; form-action 'none'",
-      })
-      .send(page.htmlOutput);
+// ===== UPLOADED FILES =====
+// Thumbnails are public so cards render without a token; template archives are
+// NOT served from here -- they go through POST /api/templates/:slug/download,
+// which checks the session and records the download first.
+storage.ensureStorage();
+app.use(
+  '/uploads',
+  express.static(storage.UPLOAD_ROOT, {
+    index: false,
+    dotfiles: 'deny',
+    maxAge: '7d',
+    setHeaders(res) {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Defense in depth: nothing that lives in uploads/ may ever execute a
+      // script, even if a malformed file somehow reached disk.
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox"
+      );
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    },
   })
 );
 
@@ -151,7 +139,8 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: 'Malformed JSON body' });
   }
 
-  // Never log the whole error object: axios/razorpay errors embed credentials.
+  // Never log the whole error object: some third-party SDK errors embed the
+  // credentials they were initialised with.
   console.error(
     `❌ ${req.method} ${req.originalUrl} ->`,
     err.status || 500,
