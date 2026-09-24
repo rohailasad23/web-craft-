@@ -24,6 +24,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Runtime output — captured server stdout, not source
+out.txt
+*.out.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
