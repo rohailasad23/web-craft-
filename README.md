@@ -3,6 +3,8 @@
 AI-assisted landing page builder. Describe a business, get a landing page, edit it
 visually, then pay & publish it.
 
+**Developed by Rohail Asad** — [rohailasad23@icloud.com](mailto:rohailasad23@icloud.com)
+
 | | Stack |
 |---|---|
 | **Frontend** | React 19, Vite 8, Tailwind CSS 4, React Router 7 (`frontend/`) |
@@ -25,6 +27,12 @@ npm run dev                   # API on :8080, web on :5173
 
 Then open <http://localhost:5173>.
 
+> **Database:** with the default `DB_MODE=auto` the API first tries your
+> `MONGODB_URI`, and if Atlas is unreachable (e.g. your IP left its access list)
+> it starts a local MongoDB under `backend/.data/mongo` instead — so `npm run dev`
+> always comes up. Run `npm run warmup-db` once inside `backend/` to pre-download
+> the local binary.
+
 ```bash
 npm run smoke                 # end-to-end regression check (spawns the API)
 npm run lint                  # frontend lint
@@ -43,7 +51,8 @@ for the annotated list.
 | Key | Notes |
 |---|---|
 | `JWT_SECRET` | The server **refuses to start** without it. There is no hardcoded fallback. |
-| `MONGODB_URI` | Connection string. The server exits on connection failure. |
+| `DB_MODE` | `auto` (default) tries `MONGODB_URI`, then falls back to a local MongoDB. `atlas` = Atlas only, fail fast. `local` = local only. |
+| `MONGODB_URI` | Connection string. Only reached in `auto`/`atlas` mode, and probed for 5s before falling back. |
 
 **Optional — the app degrades gracefully without each of these**
 
@@ -75,8 +84,10 @@ backend/
     contentAI.js         provider chain + normalisation; never throws
     images.js            Unsplash with local SVG fallback
     render.js            currentState -> HTML (single source of truth)
+    database.js          DB_MODE: Atlas, or an on-disk local MongoDB fallback
   utils/                 html (escaping), secrets (config validation)
   scripts/smoke.js       end-to-end smoke test
+  scripts/warmup-db.js   pre-downloads the local MongoDB binary
 frontend/
   src/lib/api.js         shared axios instance: auth header + global 401 handling
   src/lib/razorpay.js    lazy checkout script loader
