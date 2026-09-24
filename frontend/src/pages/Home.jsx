@@ -80,16 +80,16 @@ export default function Home() {
 
         <div className="relative mx-auto max-w-4xl px-5 pb-20 pt-16 text-center sm:px-6 sm:pt-24">
           <span className="ui-eyebrow animate-fade-up">Template marketplace</span>
-          <h1 className="mt-5 animate-fade-up text-4xl font-extrabold leading-[1.06] tracking-tight text-ink-900 [animation-delay:.08s] sm:text-6xl">
-            Discover, download &amp;
+          <h1 className="mt-5 animate-fade-up text-4xl font-extrabold leading-[1.04] tracking-tight text-ink-900 [animation-delay:.08s] sm:text-6xl">
+            <span className="block">Discover.</span>
+            <span className="block">Download.</span>
             <span className="block bg-gradient-to-r from-brand-600 via-brand-500 to-purple-500 bg-clip-text text-transparent">
-              ship websites faster
+              Build.
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl animate-fade-up text-base leading-relaxed text-ink-500 [animation-delay:.16s] sm:text-lg">
-            A community library of ready-made templates for developers and creators. Browse by
-            category or technology, preview before you commit, and download the source in one
-            click.
+            Ready-made website templates for developers and creators. Browse by category or
+            technology, preview before you commit, and download the source in one click.
           </p>
 
           <form

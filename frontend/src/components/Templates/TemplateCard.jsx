@@ -6,8 +6,8 @@ import { downloadTemplate } from '../../lib/download';
 import { useToast } from '../Common/Toast';
 
 /**
- * One template in a grid (spec §7): thumbnail, name, short description,
- * technologies, developer, download count, preview + download.
+ * One template in a grid (spec §8): thumbnail, name, short description, category,
+ * technologies, developer, download count and details / preview / download buttons.
  */
 export default function TemplateCard({ template, onDownloaded }) {
   const { isAuthenticated } = useSession();
@@ -94,7 +94,7 @@ export default function TemplateCard({ template, onDownloaded }) {
           </ul>
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-100 pt-3.5">
+        <div className="mt-4 flex items-center gap-3 border-t border-ink-100 pt-3.5">
           {authorId ? (
             <Link
               to={`/developers/${authorId}`}
@@ -106,23 +106,48 @@ export default function TemplateCard({ template, onDownloaded }) {
             <span className="truncate text-xs font-semibold text-ink-500">{template.authorName}</span>
           )}
 
-          <div className="flex shrink-0 items-center gap-2">
+          <span className="ml-auto shrink-0 text-xs font-semibold text-ink-500">
+            ↓ {formatCount(template.downloadCount)} download
+            {(template.downloadCount || 0) === 1 ? '' : 's'}
+          </span>
+        </div>
+
+        {/* Spec §8: details + preview + download, side by side and always reachable. */}
+        <div className="mt-3 flex gap-2">
+          <Link
+            to={`/templates/${template.slug}`}
+            className="ui-btn ui-btn--soft flex-1 !px-2 !py-1.5 !text-[11px]"
+          >
+            Details
+          </Link>
+
+          {template.previewUrl ? (
+            <a
+              href={template.previewUrl}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="ui-btn ui-btn--ghost flex-1 !px-2 !py-1.5 !text-[11px]"
+            >
+              Preview
+            </a>
+          ) : (
             <Link
               to={`/templates/${template.slug}`}
-              className="ui-btn ui-btn--ghost !px-3 !py-1.5 !text-xs"
+              className="ui-btn ui-btn--ghost flex-1 !px-2 !py-1.5 !text-[11px]"
             >
               Preview
             </Link>
-            <button
-              type="button"
-              onClick={handleDownload}
-              disabled={busy}
-              className="ui-btn ui-btn--primary !px-3 !py-1.5 !text-xs"
-            >
-              {busy ? <span className="ui-spinner" aria-hidden /> : <span aria-hidden>↓</span>}
-              {busy ? '…' : 'Download'}
-            </button>
-          </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={busy}
+            className="ui-btn ui-btn--primary flex-1 !px-2 !py-1.5 !text-[11px]"
+          >
+            {busy ? <span className="ui-spinner" aria-hidden /> : <span aria-hidden>↓</span>}
+            {busy ? '…' : 'Download'}
+          </button>
         </div>
       </div>
     </article>

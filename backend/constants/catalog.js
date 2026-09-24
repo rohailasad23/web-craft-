@@ -11,9 +11,31 @@
  * whatever GET /api/meta returns and never keeps its own copy.
  */
 
-const TECHNOLOGIES = ['HTML/CSS', 'JavaScript', 'React', 'Next.js', 'Vue', 'Node.js'];
+// HTML and CSS ship as one chip: splitting them would leave templates tagged
+// "HTML/CSS" unfilterable, because the filter matches a technology exactly.
+const TECHNOLOGIES = [
+  'HTML/CSS',
+  'JavaScript',
+  'React',
+  'Next.js',
+  'Vue',
+  'Node.js',
+  'Tailwind CSS',
+  'Bootstrap',
+];
 
-const CATEGORIES = ['Portfolio', 'E-commerce', 'Landing Page', 'Dashboard', 'Blog'];
+const CATEGORIES = [
+  'Portfolio',
+  'E-commerce',
+  'Landing Page',
+  'Dashboard',
+  'Blog',
+  'Business',
+  'Agency',
+  'Personal',
+  'SaaS',
+  'Other',
+];
 
 const SORTS = ['newest', 'popular', 'downloads', 'az'];
 

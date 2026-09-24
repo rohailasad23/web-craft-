@@ -256,6 +256,10 @@ async function run() {
     const admin = await req('GET', '/api/admin/stats', { token: userToken });
     check('normal user GET /api/admin/stats -> 403', admin.res.status === 403);
 
+    // Spec §26: a developer is powerful, but still not an admin.
+    const devAdmin = await req('GET', '/api/admin/stats', { token: devToken });
+    check('developer GET /api/admin/stats -> 403', devAdmin.res.status === 403);
+
     const anonMine = await req('GET', '/api/templates/mine');
     check('anonymous GET /api/templates/mine -> 401', anonMine.res.status === 401);
 

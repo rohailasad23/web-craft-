@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
 import { useToast } from '../../components/Common/Toast';
-import { formatCount, mediaUrl } from '../../lib/format';
+import { formatDate, formatCount, mediaUrl } from '../../lib/format';
 import { RowSkeleton } from '../../components/Common/Skeletons';
 import { StatusBadge } from './Dashboard';
 import Footer from '../../components/Common/Footer';
@@ -120,9 +120,8 @@ export default function MyTemplates() {
                           {t.category} · {(t.technologies || []).join(', ')}
                         </p>
                         <p className="mt-1.5 text-[11px] font-semibold text-ink-700">
-                          ↓ {formatCount(t.downloadCount)} downloads ·{' '}
-                          {(t.screenshots || []).length} screenshot
-                          {(t.screenshots || []).length === 1 ? '' : 's'}
+                          ↓ {formatCount(t.downloadCount)} downloads · added{' '}
+                          {formatDate(t.createdAt)}
                         </p>
                       </div>
 
