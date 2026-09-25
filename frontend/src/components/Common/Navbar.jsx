@@ -76,16 +76,22 @@ export default function Navbar() {
   const linkCls = (to) => `ui-navlink ${location.pathname === to ? '!text-brand-700 font-semibold' : ''}`;
 
   const brand = (
-    <Link to="/" className="group flex shrink-0 items-center gap-2.5">
+    <Link to="/" aria-label="web craft — home" className="group flex shrink-0 items-center gap-2.5">
       <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-sm shadow-soft transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110">
         🧩
       </span>
-      <span className="text-lg font-extrabold tracking-tight text-ink-900">web craft</span>
+      {/* Below 400px the corner keeps the mark, Login and Sign up and lets
+          the menu carry the labels -- fitting the full wordmark too would
+          push the hamburger past the viewport (and `overflow-clip` on the
+          shell would silently cut it off). */}
+      <span className="text-lg font-extrabold tracking-tight text-ink-900 max-[399px]:hidden">
+        web craft
+      </span>
     </Link>
   );
 
   const authButtons = isAuthenticated ? (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-2">
       <span className="hidden items-center gap-2 rounded-full border border-ink-200 bg-ink-50 py-1 pl-1 pr-3 text-sm text-ink-700 md:flex">
         <span className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-xs font-bold text-white">
           {initials(user?.name)}
@@ -95,18 +101,27 @@ export default function Navbar() {
       <button
         type="button"
         onClick={handleLogout}
-        className="ui-btn ui-btn--ghost !px-3 !py-2 text-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-600"
+        className="ui-btn ui-btn--ghost !px-2.5 !py-1.5 text-xs sm:!px-3.5 sm:!py-2 sm:text-sm hover:!border-red-200 hover:!bg-red-50 hover:!text-red-600"
       >
         Logout
       </button>
     </div>
   ) : (
-    <div className="flex items-center gap-2">
-      <Link to="/login" className="ui-btn ui-btn--ghost !px-3.5 !py-2 text-sm">
-        Login
+    /* Always rendered -- these two live in the top-right corner at every
+       viewport, so they are no longer inside a `hidden lg:block` wrapper
+       that used to hide them below 1024px behind the hamburger. */
+    <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
+      <Link
+        to="/login"
+        className="ui-btn ui-btn--login !px-2.5 !py-1.5 text-xs sm:!px-4 sm:!py-2 sm:text-sm"
+      >
+        <span className="ui-gradtext">Login</span>
       </Link>
-      <Link to="/register" className="ui-btn ui-btn--primary !px-3.5 !py-2 text-sm">
-        Register
+      <Link
+        to="/register"
+        className="ui-btn ui-btn--signup !px-2.5 !py-1.5 text-xs sm:!px-4 sm:!py-2 sm:text-sm"
+      >
+        Sign up
       </Link>
     </div>
   );
@@ -119,7 +134,7 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5 sm:px-6">
         {brand}
 
-        {/* Desktop */}
+        {/* Desktop links */}
         <div className="hidden items-center gap-5 lg:flex">
           {navLinks.map((l) => (
             <Link key={l.to} to={l.to} className={linkCls(l.to)}>
@@ -128,21 +143,24 @@ export default function Navbar() {
           ))}
         </div>
 
-        <div className="hidden lg:block">{authButtons}</div>
-
-        {/* Mobile trigger */}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-label={open ? 'Close menu' : 'Open menu'}
-          className="ui-btn ui-btn--ghost !px-3 !py-2 lg:hidden"
-        >
-          <span aria-hidden>{open ? '✕' : '☰'}</span>
-        </button>
+        {/* Top-right cluster: auth actions + the menu trigger. Rendered at
+            every width so Login / Sign up are always in the corner. */}
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {authButtons}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-label={open ? 'Close menu' : 'Open menu'}
+            className="ui-btn ui-btn--ghost !px-2 !py-1.5 sm:!px-3 sm:!py-2 lg:hidden"
+          >
+            <span aria-hidden>{open ? '✕' : '☰'}</span>
+          </button>
+        </div>
       </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile drawer -- navigation only; the auth actions above stay put
+          so the corner buttons are never duplicated right underneath. */}
       {open && (
         <div className="animate-slide-down border-t border-ink-100 bg-white px-5 pb-5 pt-3 lg:hidden">
           <div className="stagger flex flex-col gap-1">
@@ -160,7 +178,6 @@ export default function Navbar() {
               </Link>
             ))}
           </div>
-          <div className="mt-4 border-t border-ink-100 pt-4">{authButtons}</div>
         </div>
       )}
     </nav>

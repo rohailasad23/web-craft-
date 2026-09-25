@@ -284,6 +284,62 @@
   .ui-btn--block { width: 100%; }
   .ui-btn--lg { padding: 0.875rem 2rem; font-size: 1.0625rem; border-radius: 0.875rem; }
 
+  /* --- Auth buttons (navbar, top-right) --------------------------
+     Login   -- white face, bold red-to-black label.
+     Sign up -- light blue face, bold white label.
+     Both carry a 2px border (transparent on Sign up) so the two sit at
+     exactly the same height inside the nav's flex row; without it the
+     Login ring would push it 4px taller than its neighbour. */
+  .ui-btn--login,
+  .ui-btn--signup {
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    border: 2px solid transparent;
+    line-height: 1.2;
+  }
+  /* Two stacked background layers: the top one paints the white face
+     inside the padding box, the bottom one paints the red-to-black
+     gradient across the whole border box -- so only the 2px ring shows
+     through. This is the standard gradient-border recipe and needs no
+     extra element. */
+  .ui-btn--login {
+    background-image:
+      linear-gradient(#fff, #fff),
+      linear-gradient(135deg, #ef4444 0%, #111827 100%);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    box-shadow: var(--shadow-soft);
+  }
+  .ui-btn--login:hover {
+    background-image:
+      linear-gradient(#fff5f6, #fff5f6),
+      linear-gradient(135deg, #ef4444 0%, #111827 100%);
+    box-shadow: 0 14px 28px -16px rgb(17 24 39 / 0.55);
+  }
+  /* Gradient label. `color` stays a real dark value so a browser that
+     cannot clip a background to text still renders readable black type
+     instead of an invisible word. */
+  .ui-gradtext {
+    color: var(--color-ink-900);
+    background-image: linear-gradient(135deg, #dc2626 0%, #111827 92%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .ui-btn--signup {
+    color: #fff;
+    /* Light blue on the leading edge, a shade deeper under the text so
+       white bold type keeps a readable contrast across the whole label. */
+    background-image: linear-gradient(135deg, #38bdf8 0%, #0284c7 55%, #0274b5 100%);
+    box-shadow: 0 10px 22px -14px rgb(2 132 199 / 0.95);
+  }
+  .ui-btn--signup:hover {
+    color: #fff;
+    background-image: linear-gradient(135deg, #2aa9ee 0%, #0274b5 55%, #0369a1 100%);
+    box-shadow: 0 14px 26px -12px rgb(2 132 199 / 1);
+  }
+
   /* --- Form controls ------------------------------------------- */
   .ui-input {
     width: 100%;

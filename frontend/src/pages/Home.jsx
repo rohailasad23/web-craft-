@@ -104,7 +104,7 @@ export default function Home() {
         </div>
 
         <div className="relative mx-auto max-w-4xl px-5 pb-20 pt-16 text-center sm:px-6 sm:pt-24">
-          <span className="ui-eyebrow animate-fade-up">Template marketplace</span>
+          <span className="ui-eyebrow animate-fade-up">Free template marketplace</span>
           <h1 className="mt-5 animate-fade-up text-4xl font-extrabold leading-[1.04] tracking-tight text-ink-900 [animation-delay:.08s] sm:text-6xl">
             <span className="block">Discover.</span>
             <span className="block">Download.</span>
@@ -113,8 +113,10 @@ export default function Home() {
             </span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl animate-fade-up text-base leading-relaxed text-ink-500 [animation-delay:.16s] sm:text-lg">
-            Ready-made website templates for developers and creators. Browse by category or
-            technology, preview before you commit, and download the source in one click.
+            <strong className="font-semibold text-ink-700">web craft is a free marketplace for
+            ready-made website templates.</strong> Browse by category or technology, open the live
+            demo before you commit, and download the full source in one click — no paywall, no
+            premium tier, no subscription.
           </p>
 
           <form
@@ -183,13 +185,132 @@ export default function Home() {
           </div>
         )}
 
+        {/* ----------------------------------------- what is web craft */}
+        <section className="mt-14" aria-labelledby="what-heading">
+          <div className="ui-card overflow-hidden">
+            <div className="grid gap-8 p-6 sm:p-9 lg:grid-cols-[1.12fr_1fr] lg:gap-12 lg:p-11">
+              <div>
+                <span className="ui-eyebrow">The short version</span>
+                <h2 id="what-heading" className="ui-title mt-2 text-2xl sm:text-3xl">
+                  What is web craft?
+                </h2>
+                <p className="mt-4 text-sm leading-relaxed text-ink-500 sm:text-base">
+                  web craft is a free catalogue of ready-made website templates. Every listing is a
+                  complete project you can actually take away — HTML/CSS, JavaScript, React, Next.js,
+                  Vue, Tailwind CSS or Bootstrap — with a live demo, screenshots, the technologies it
+                  uses and the developer who built it, all on one page.
+                </p>
+                <p className="mt-3.5 text-sm leading-relaxed text-ink-500 sm:text-base">
+                  Nothing here is held back for money. There is no premium tier, no credits, no
+                  subscription and no blurred preview: you find a template, you look at it properly,
+                  and you download the source. That is the whole product.
+                </p>
+                <div className="mt-6 flex flex-wrap gap-2.5">
+                  <Link to="/templates" className="ui-btn ui-btn--primary !px-5 !py-2.5 text-sm">
+                    Browse the catalogue
+                  </Link>
+                  <Link to="/register" className="ui-btn ui-btn--soft !px-5 !py-2.5 text-sm">
+                    Create a free account
+                  </Link>
+                </div>
+              </div>
+
+              <ul className="stagger space-y-3.5">
+                {WHAT_POINTS.map((p) => (
+                  <li key={p.title} className="flex gap-3.5 rounded-2xl border border-ink-100 bg-ink-50/70 p-4">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-base shadow-soft" aria-hidden>
+                      {p.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-ink-900">{p.title}</span>
+                      <span className="mt-1 block text-sm leading-relaxed text-ink-500">{p.body}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* ------------------------------------------------ how it works */}
+        <section className="mt-16" aria-labelledby="how-heading">
+          <SectionHeading
+            id="how-heading"
+            eyebrow="The journey"
+            title="How web craft works"
+            blurb="Four steps from an idea to a running project — and the exact same path runs in reverse when you are here to share your own work."
+          />
+          <ol className="stagger mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((s, i) => (
+              <li key={s.title} className="ui-card ui-card--hover p-5">
+                <span className="grid h-9 w-9 place-items-center rounded-full bg-brand-50 text-sm font-extrabold text-brand-700">
+                  {i + 1}
+                </span>
+                <h3 className="mt-3.5 text-sm font-bold text-ink-900">{s.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{s.body}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="ui-alert ui-alert--info mt-5">
+            <span aria-hidden>🛠️</span>
+            <span>
+              <strong className="font-semibold">Built something worth sharing?</strong> Register,
+              open the Developer Dashboard, upload your archive and screenshots, and your template
+              joins the same catalogue — published straight away and free to everyone.
+            </span>
+          </p>
+        </section>
+
+        {/* ------------------------------------------- why it exists */}
+        <section className="mt-16" aria-labelledby="why-heading">
+          <SectionHeading
+            id="why-heading"
+            eyebrow="Why we built it"
+            title="Why this website exists"
+            blurb="Most template marketplaces make you pay before you can even see what you are buying. web craft was built to be the opposite of that."
+          />
+          <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            <div className="ui-card border-ink-200 p-6">
+              <span className="ui-badge bg-red-50 text-red-600">The problem</span>
+              <p className="mt-3.5 text-sm leading-relaxed text-ink-500 sm:text-base">
+                Good templates sit behind paywalls and subscriptions, previews are blurred until you
+                hand over a card, and finding something that matches your stack means scrolling past
+                listing after listing that does not. On the other side, the free files are usually a
+                single abandoned page with no screenshots and nobody to ask.
+              </p>
+            </div>
+            <div className="ui-card border-brand-200 p-6">
+              <span className="ui-badge bg-brand-50 text-brand-700">Our answer</span>
+              <p className="mt-3.5 text-sm leading-relaxed text-ink-500 sm:text-base">
+                One place where quality templates are free to browse, free to preview and free to
+                download — and where the developers who build them get a real audience instead of a
+                checkout page. No payment provider is wired into this project at all, so there is
+                nothing to upgrade to and nothing to unlock later.
+              </p>
+            </div>
+          </div>
+
+          <div className="stagger mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {PROMISES.map((p) => (
+              <div key={p.title} className="ui-card p-5">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-ink-50 text-lg" aria-hidden>
+                  {p.icon}
+                </span>
+                <h3 className="mt-3 text-sm font-bold text-ink-900">{p.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-500">{p.body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* ------------------------------------------------ categories */}
         {ready && categories?.length > 0 && (
-          <section className="mt-14" aria-labelledby="categories-heading">
+          <section className="mt-16" aria-labelledby="categories-heading">
             <SectionHeading
               id="categories-heading"
               eyebrow="Browse"
               title="Popular categories"
+              blurb="Start from the kind of site you are building. Categories and technologies share one filter bar, so “React” and “Portfolio” are a single click apart — pick either and the catalogue narrows itself."
               action={{ to: '/templates', label: 'View all' }}
             />
             <div className="stagger mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -222,6 +343,7 @@ export default function Home() {
           id="featured-heading"
           eyebrow="Hand-picked"
           title="Featured templates"
+          blurb="A short shortlist shown first on purpose: templates marked as featured, each with a live demo, a screenshot gallery and the full source archive attached."
           items={featured}
           loading={loading}
         />
@@ -231,6 +353,7 @@ export default function Home() {
           id="latest-heading"
           eyebrow="Fresh"
           title="Latest templates"
+          blurb="Newest uploads first. Useful if you have been here before and want to see what landed since your last visit — every card opens the full template page with the demo and the download."
           items={latest}
           loading={loading}
           action={{ to: '/templates?sort=newest', label: 'All latest' }}
@@ -241,6 +364,7 @@ export default function Home() {
           id="popular-heading"
           eyebrow="Community favourites"
           title="Most downloaded"
+          blurb="Sorted by real download counts recorded on this site, so this is the closest thing we have to a list of what developers actually reach for."
           items={popular}
           loading={loading}
           action={{ to: '/templates?sort=downloads', label: 'All popular' }}
@@ -252,6 +376,7 @@ export default function Home() {
             id="developers-heading"
             eyebrow="Community"
             title="Meet the contributors"
+            blurb="Every template has an author. These are the people with published work here — open a profile to see everything they have uploaded and how often it has been downloaded."
             action={{ to: '/developers', label: 'All developers' }}
           />
 
@@ -294,6 +419,24 @@ export default function Home() {
           )}
         </section>
 
+        {/* ------------------------------------------------------- FAQ */}
+        <section className="mt-16" aria-labelledby="faq-heading">
+          <SectionHeading
+            id="faq-heading"
+            eyebrow="Questions"
+            title="Why this site exists, answered"
+            blurb="The short version of what web craft is, what it costs and how it stays free."
+          />
+          <div className="stagger mt-6 grid gap-4 lg:grid-cols-2">
+            {FAQS.map((f) => (
+              <div key={f.q} className="ui-card p-5 sm:p-6">
+                <h3 className="text-sm font-bold text-ink-900 sm:text-base">{f.q}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-ink-500">{f.a}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* -------------------------------------------------- CTA band */}
         <section className="relative mt-16 overflow-hidden rounded-3xl bg-gradient-to-br from-brand-600 via-brand-700 to-purple-800 px-6 py-12 text-center shadow-lift sm:px-12">
           <div aria-hidden className="pointer-events-none absolute inset-0 opacity-20">
@@ -333,6 +476,96 @@ export default function Home() {
 }
 
 const CATEGORY_ICONS = ['🎨', '🛍', '🚀', '📊', '✍️'];
+
+/* Homepage explainer copy. Kept as data so the sections read as one
+   consistent voice and the JSX stays about layout, not sentences. */
+const WHAT_POINTS = [
+  {
+    icon: '👀',
+    title: 'Preview it before you download it',
+    body: 'Every template page carries a live demo link and a screenshot gallery, so you can judge the layout and the details before you spend a byte.',
+  },
+  {
+    icon: '📦',
+    title: 'Real source, not a sample',
+    body: 'One click hands you the whole project archive — markup, styles, scripts and assets — ready to open in your editor.',
+  },
+  {
+    icon: '🤝',
+    title: 'Made by developers, listed by name',
+    body: 'Each upload comes from a contributor with a public profile, so you always know who built it and what else they have published.',
+  },
+];
+
+const STEPS = [
+  {
+    title: 'Discover',
+    body: 'Start on this page or open the full catalogue. Search by name, pick a category, or filter by the technology you actually build in.',
+  },
+  {
+    title: 'Preview',
+    body: 'Open a template to read what it is, flip through the screenshots and jump to the live demo in a new tab.',
+  },
+  {
+    title: 'Download',
+    body: 'Sign in — creating an account is free — and take the archive. It is recorded in My Downloads so you can come back to it.',
+  },
+  {
+    title: 'Build',
+    body: 'Open it in your editor, swap in your own content and ship it. The code is yours to learn from and adapt.',
+  },
+];
+
+const PROMISES = [
+  {
+    icon: '💸',
+    title: '100% free, always',
+    body: 'No premium tier, no subscriptions, no paywalls. Every template costs the same: nothing.',
+  },
+  {
+    icon: '🔍',
+    title: 'Public browsing',
+    body: 'Search, category pages, template details and live demos are open to everyone — no account needed to look.',
+  },
+  {
+    icon: '🧾',
+    title: 'Tracked downloads',
+    body: 'Sign in and every download lands in My Downloads, so nothing you take has to be hunted down again.',
+  },
+  {
+    icon: '🏆',
+    title: 'Credit stays with the author',
+    body: 'Every listing points back to the developer who uploaded it, with their profile and the rest of their work.',
+  },
+];
+
+const FAQS = [
+  {
+    q: 'What is web craft?',
+    a: 'A free marketplace for ready-made website templates. You search it by category or technology, preview any template live, and download its full source archive.',
+  },
+  {
+    q: 'Is it really free?',
+    a: 'Yes. There is no premium tier, no subscription and no paid download anywhere on this site. The project deliberately has no payment provider wired into it.',
+  },
+  {
+    q: 'Do I need an account?',
+    a: 'Not to browse. Search, category pages, template details and demos are public. You only sign in when you want to download, and registering costs nothing.',
+  },
+  {
+    q: 'What exactly do I get?',
+    a: 'The complete archive the developer uploaded — markup, styles, scripts and assets — plus the screenshots and details they shared on the template page.',
+  },
+  {
+    q: 'Can I use a template commercially?',
+    a: 'Check the template page and the licence files inside the archive. Nothing here claims a licence on the author’s behalf, so confirm the terms with them before shipping commercially.',
+  },
+  {
+    q: 'How do I publish my own work?',
+    a: 'Register, open your Developer Dashboard and choose Upload Template. Your listing is published straight away and appears in the catalogue and in search.',
+  },
+];
+
 const CATEGORY_TINTS = [
   'rgba(99,102,241,.14)',
   'rgba(244,63,94,.14)',
@@ -341,14 +574,17 @@ const CATEGORY_TINTS = [
   'rgba(139,92,246,.14)',
 ];
 
-function SectionHeading({ eyebrow, title, action, id }) {
+function SectionHeading({ eyebrow, title, action, id, blurb }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
-      <div>
+      <div className="max-w-3xl">
         <span className="ui-eyebrow">{eyebrow}</span>
         <h2 id={id} className="ui-title mt-2 text-2xl sm:text-3xl">
           {title}
         </h2>
+        {blurb && (
+          <p className="mt-2.5 text-sm leading-relaxed text-ink-500 sm:text-base">{blurb}</p>
+        )}
       </div>
       {action && (
         <Link
@@ -362,12 +598,12 @@ function SectionHeading({ eyebrow, title, action, id }) {
   );
 }
 
-function TemplateSection({ id, eyebrow, title, items, loading, action }) {
+function TemplateSection({ id, eyebrow, title, blurb, items, loading, action }) {
   if (!loading && (!items || items.length === 0)) return null;
 
   return (
     <section className="mt-16" aria-labelledby={id}>
-      <SectionHeading eyebrow={eyebrow} title={title} action={action} id={id} />
+      <SectionHeading eyebrow={eyebrow} title={title} blurb={blurb} action={action} id={id} />
       <div className="mt-6">
         {loading ? (
           <TemplateGridSkeleton count={4} />
