@@ -3,6 +3,7 @@
 const express = require('express');
 const asyncHandler = require('../middleware/asyncHandler');
 const verifyToken = require('../middleware/auth');
+const { requireActive } = require('../middleware/auth');
 const User = require('../models/User');
 const Download = require('../models/Download');
 const Favorite = require('../models/Favorite');
@@ -27,6 +28,9 @@ router.use(verifyToken);
  */
 router.put(
   '/me',
+  // Spec §9: reads stay open so a suspended account can still SEE what it
+  // owns and read the notice; changing it is what is refused.
+  requireActive,
   asyncHandler(async (req, res) => {
     const updates = {};
     if (typeof req.body.name === 'string') updates.name = req.body.name.trim().slice(0, 80);

@@ -4,6 +4,7 @@ import api, { getErrorMessage } from '../lib/api';
 import { formatDate, formatCount, initials } from '../lib/format';
 import TemplateCard from '../components/Templates/TemplateCard';
 import { TemplateGridSkeleton } from '../components/Common/Skeletons';
+import Breadcrumbs from '../components/Common/Breadcrumbs';
 import Footer from '../components/Common/Footer';
 
 /** /developers/:id -- name, avatar, bio, counts and published templates (§10). */
@@ -73,20 +74,10 @@ export default function DeveloperProfile() {
   return (
     <div className="flex min-h-[70vh] flex-col">
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 pb-16 pt-8 sm:px-6">
-        <nav
-          aria-label="Breadcrumb"
-          className="mb-6 flex flex-wrap items-center gap-2 text-sm text-ink-500"
-        >
-          <Link to="/" className="transition-colors hover:text-brand-700">
-            Home
-          </Link>
-          <span aria-hidden>›</span>
-          <Link to="/developers" className="transition-colors hover:text-brand-700">
-            Developers
-          </Link>
-          <span aria-hidden>›</span>
-          <span className="font-semibold text-ink-900">{developer.name}</span>
-        </nav>
+        <Breadcrumbs
+          className="mb-6 text-sm"
+          items={[{ label: 'Developers', to: '/developers' }, { label: developer.name }]}
+        />
 
         <header className="ui-card animate-fade-up p-6 sm:p-8">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">

@@ -21,6 +21,28 @@ export function formatDate(iso) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/**
+ * ISO string -> "just now" / "4m ago" / "2d ago" / "12 Sep 2026".
+ *
+ * Relative for anything recent (a notification feed that says "2 days ago"
+ * reads faster than one that says "23 September 2026"), then falls back to an
+ * absolute date so a stale item is never vague about how stale it is.
+ */
+export function timeAgo(iso) {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 45) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatDate(iso);
+}
+
 /** "Ayesha Khan" -> "AK". Used for the avatar when none is uploaded. */
 export function initials(name) {
   const parts = String(name || '')

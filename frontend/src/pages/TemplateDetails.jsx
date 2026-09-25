@@ -6,6 +6,8 @@ import { useFavorite } from '../lib/favorites';
 import { downloadTemplate } from '../lib/download';
 import { useToast } from '../components/Common/Toast';
 import ShareButton from '../components/Common/ShareButton';
+import Breadcrumbs from '../components/Common/Breadcrumbs';
+import ReportDialog from '../components/Common/ReportDialog';
 import { formatBytes, formatDate, formatCount, initials, mediaUrl } from '../lib/format';
 import Footer from '../components/Common/Footer';
 
@@ -31,6 +33,8 @@ export default function TemplateDetails() {
   const [phase, setPhase] = useState('idle');
   // Index of the screenshot shown in the lightbox, or null when closed (§23).
   const [lightbox, setLightbox] = useState(null);
+  // Spec §7: reporting is a dialog, not a `mailto:` buried in the footer.
+  const [reporting, setReporting] = useState(false);
   const resetTimer = useRef(null);
   const closeRef = useRef(null);
 
@@ -156,30 +160,29 @@ export default function TemplateDetails() {
   const activeImage = shots[activeShot] || template.thumbnail;
   const authorId = author?._id ?? author;
 
+  // Spec §31: file type and size, derived from what the developer actually
+  // uploaded -- nothing here is guessed, so a template with no recorded file
+  // simply shows a dash.
+  const fileExt = (template.file?.filename || '').includes('.')
+    ? template.file.filename.split('.').pop().toUpperCase()
+    : /zip/i.test(template.file?.contentType || '')
+      ? 'ZIP'
+      : '';
+
   return (
     <div className="flex min-h-[70vh] flex-col">
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 pb-16 pt-8 sm:px-6">
-        <nav
-          aria-label="Breadcrumb"
-          className="mb-6 flex flex-wrap items-center gap-2 text-sm text-ink-500"
-        >
-          <Link to="/" className="transition-colors hover:text-brand-700">
-            Home
-          </Link>
-          <span aria-hidden>›</span>
-          <Link to="/templates" className="transition-colors hover:text-brand-700">
-            Templates
-          </Link>
-          <span aria-hidden>›</span>
-          <Link
-            to={`/templates?filter=${encodeURIComponent(template.category)}`}
-            className="transition-colors hover:text-brand-700"
-          >
-            {template.category}
-          </Link>
-          <span aria-hidden>›</span>
-          <span className="font-semibold text-ink-900">{template.title}</span>
-        </nav>
+        <Breadcrumbs
+          className="mb-6 text-sm"
+          items={[
+            { label: 'Templates', to: '/templates' },
+            {
+              label: template.category,
+              to: `/templates?filter=${encodeURIComponent(template.category)}`,
+            },
+            { label: template.title },
+          ]}
+        />
 
         <div className="grid gap-8 lg:grid-cols-[1.65fr_1fr]">
           {/* ------------------------------------------------ media */}
@@ -287,6 +290,52 @@ export default function TemplateDetails() {
                 </ul>
               </section>
             )}
+
+            {/* Spec §6: only when the developer actually wrote one. An empty
+                or absent changelog renders nothing -- a section heading over
+                a blank list tells the visitor less than no section at all. */}
+            {template.changelog?.length > 0 && (
+              <section className="mt-7" aria-labelledby="changelog-heading">
+                <h2 id="changelog-heading" className="ui-title text-xl">
+                  Changelog
+                </h2>
+                <ol className="stagger mt-4 space-y-3">
+                  {template.changelog.map((entry, index) => {
+                    const notes = Array.isArray(entry.notes) ? entry.notes : [];
+                    return (
+                      <li
+                        key={`${entry.version}-${entry.createdAt || index}`}
+                        className="ui-card p-4"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="text-sm font-extrabold tracking-tight text-ink-900">
+                            {entry.version ? `v${entry.version}` : 'Update'}
+                          </span>
+                          <span className="text-xs text-ink-400">
+                            {formatDate(entry.createdAt)}
+                          </span>
+                        </div>
+                        {notes.length > 0 && (
+                          <ul className="mt-2.5 space-y-1.5">
+                            {notes.map((note, i) => (
+                              <li
+                                key={`${note}-${i}`}
+                                className="flex gap-2 text-sm leading-relaxed text-ink-600"
+                              >
+                                <span aria-hidden className="shrink-0 text-brand-400">
+                                  •
+                                </span>
+                                <span className="min-w-0 break-words">{note}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+            )}
           </section>
 
           {/* ------------------------------------------------- sidebar */}
@@ -302,6 +351,10 @@ export default function TemplateDetails() {
                 {template.title}
               </h1>
 
+              {/* Spec §31: the facts a visitor needs before committing to a
+                  download. Every value is whatever the developer supplied --
+                  nothing here is derived or assumed, and a missing licence
+                  reads as missing (§32) rather than defaulting to "MIT". */}
               <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-y border-ink-100 py-5 text-sm">
                 <Meta label="Category">
                   <Link
@@ -311,11 +364,26 @@ export default function TemplateDetails() {
                     {template.category}
                   </Link>
                 </Meta>
+                <Meta label="Version">{template.version || '—'}</Meta>
                 <Meta label="Downloads">{formatCount(template.downloadCount)}</Meta>
                 <Meta label="Saves">{formatCount(template.favoriteCount || 0)}</Meta>
                 <Meta label="Added">{formatDate(template.createdAt)}</Meta>
+                <Meta label="Updated">{formatDate(template.updatedAt)}</Meta>
                 <Meta label="Size">
                   {template.file?.size ? formatBytes(template.file.size) : '—'}
+                </Meta>
+                <Meta label="File type">{fileExt || '—'}</Meta>
+                <Meta label="License" className="col-span-2">
+                  {template.license ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-ink-100 px-2 py-1 text-xs font-bold tracking-wide text-ink-700">
+                      <span aria-hidden>⚖</span>
+                      {template.license}
+                    </span>
+                  ) : (
+                    <span className="text-sm font-normal italic text-ink-400">
+                      License not specified.
+                    </span>
+                  )}
                 </Meta>
               </dl>
 
@@ -446,6 +514,25 @@ export default function TemplateDetails() {
                 Downloading records your name against this template so the developer can see how
                 often it is used. Re-downloading is not counted twice.
               </p>
+
+              {/* Spec §7: reachable, but deliberately quieter than Download and
+                  Save -- reporting is the exception, not the next step in the
+                  happy path. Hidden from the owner, who can simply edit it. */}
+              {!canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      toast.info('Please log in to report this template.');
+                      return;
+                    }
+                    setReporting(true);
+                  }}
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                >
+                  <span aria-hidden>⚑</span> Report this template
+                </button>
+              )}
             </div>
 
             {canEdit && user?.role === 'admin' && (
@@ -456,6 +543,12 @@ export default function TemplateDetails() {
           </aside>
         </div>
       </main>
+
+      <ReportDialog
+        open={reporting}
+        onClose={() => setReporting(false)}
+        template={template}
+      />
 
       {/* ------------------------------------------------ lightbox (§23) */}
       {lightbox !== null && shots[lightbox] && (
@@ -524,9 +617,9 @@ export default function TemplateDetails() {
   );
 }
 
-function Meta({ label, children }) {
+function Meta({ label, children, className = '' }) {
   return (
-    <div>
+    <div className={className}>
       <dt className="text-xs font-bold uppercase tracking-wide text-ink-500">{label}</dt>
       <dd className="mt-1 font-semibold text-ink-900">{children}</dd>
     </div>

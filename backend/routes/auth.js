@@ -4,6 +4,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../middleware/asyncHandler');
 const verifyToken = require('../middleware/auth');
+const { requireActive } = require('../middleware/auth');
 const { requireSecret } = require('../utils/secrets');
 const User = require('../models/User');
 
@@ -29,6 +30,9 @@ function publicUser(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    // Spec §9: surfaced so the client can explain WHY actions are blocked
+    // instead of leaving the user to guess at a string of failed requests.
+    status: user.status || 'active',
     avatar: user.avatar || '',
     bio: user.bio || '',
     createdAt: user.createdAt,
@@ -100,6 +104,19 @@ router.post(
     const valid = await user.comparePassword(password);
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
 
+    // Spec §9: a suspended account keeps its data but cannot sign in. Checked
+    // AFTER the password so this cannot be used to fish for suspended
+    // accounts, and answered with 403 rather than 401 -- the credentials were
+    // correct, the account itself is what is refused. 401 would also be read
+    // by the client as "wrong password", which is not what happened.
+    if (user.status === 'suspended') {
+      return res.status(403).json({
+        error:
+          'This account is suspended. Please contact support if you believe this is a mistake.',
+        code: 'ACCOUNT_SUSPENDED',
+      });
+    }
+
     res.json({
       success: true,
       message: 'Login successful',
@@ -124,6 +141,8 @@ router.get('/me', verifyToken, asyncHandler(async (req, res) => {
 router.post(
   '/change-password',
   verifyToken,
+  // Spec §9: a frozen account does not get to change its credentials either.
+  requireActive,
   asyncHandler(async (req, res) => {
     const current = String(req.body.currentPassword || '');
     const next = String(req.body.newPassword || '');

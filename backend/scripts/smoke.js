@@ -18,6 +18,7 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 
 const PORT = process.env.SMOKE_PORT || 8099;
 const API = `http://127.0.0.1:${PORT}`;
@@ -112,6 +113,27 @@ function resetSmokeDb() {
     // A mongod left over from a crashed run can hold the directory open on
     // Windows. Warn and continue rather than blocking the test entirely.
     console.warn(`⚠️  Could not reset the smoke database (${e.code || e.message})`);
+  }
+}
+
+/**
+ * Promote a fixture to admin directly in the database.
+ *
+ * Deliberately not an HTTP path: the WHOLE POINT of spec §22 is that no
+ * request can grant admin, so the test has to step around its own API for
+ * this single step. Same URI the child server builds in services/database.js.
+ */
+async function promoteToAdmin(email) {
+  const port = process.env.SMOKE_DB_PORT || '27018';
+  const uri = `mongodb://127.0.0.1:${port}/web-craft-smoke`;
+  await mongoose.connect(uri, { serverSelectionTimeoutMS: 15000 });
+  try {
+    const r = await mongoose.connection
+      .collection('users')
+      .updateOne({ email }, { $set: { role: 'admin' } });
+    return r.modifiedCount === 1;
+  } finally {
+    await mongoose.disconnect();
   }
 }
 
@@ -722,6 +744,424 @@ async function run() {
       body: { email: userEmail, password: NEW_PASS },
     });
     check('new password works', newLogin.res.ok, JSON.stringify(newLogin.data).slice(0, 120));
+  }
+
+  /* ------------------------------------------------- versioning + changelog */
+  section('Versioning, changelog + license (§5, §6, §32)');
+  {
+    const badVersion = await req('PUT', `/api/templates/${templateA._id}`, {
+      token: devToken,
+      body: { version: 'not a version' },
+    });
+    check('nonsense version -> 400', badVersion.res.status === 400, `got ${badVersion.res.status}`);
+
+    const badLicense = await req('PUT', `/api/templates/${templateA._id}`, {
+      token: devToken,
+      body: { license: 'Do What You Want' },
+    });
+    check('unknown license -> 400', badLicense.res.status === 400, `got ${badLicense.res.status}`);
+
+    const upd = await req('PUT', `/api/templates/${templateA._id}`, {
+      token: devToken,
+      body: {
+        version: '2.1.0',
+        license: 'MIT',
+        changelogNotes:
+          '- Improved responsive layout\n• Fixed mobile navigation\nUpdated dependencies',
+      },
+    });
+    check(
+      'update with version + license + changelog -> 200',
+      upd.res.ok,
+      JSON.stringify(upd.data).slice(0, 140)
+    );
+    check('version stored', upd.data.template?.version === '2.1.0', `got ${upd.data.template?.version}`);
+    check('license stored', upd.data.template?.license === 'MIT', `got ${upd.data.template?.license}`);
+
+    const entry = upd.data.template?.changelog?.[0];
+    check('newest changelog entry is first', entry?.version === '2.1.0', JSON.stringify(upd.data.template?.changelog));
+    check(
+      'bullet markers stripped, notes kept in order',
+      Array.isArray(entry?.notes) &&
+        entry.notes.length === 3 &&
+        entry.notes[0] === 'Improved responsive layout' &&
+        entry.notes[1] === 'Fixed mobile navigation' &&
+        entry.notes[2] === 'Updated dependencies',
+      JSON.stringify(entry?.notes)
+    );
+
+    const pub = await req('GET', `/api/templates/${templateA.slug}`);
+    check(
+      'public details page exposes version, license and changelog',
+      pub.data.template?.version === '2.1.0' &&
+        pub.data.template?.license === 'MIT' &&
+        (pub.data.template?.changelog || []).length === 1,
+      JSON.stringify(pub.data.template?.changelog)
+    );
+
+    // §31: do not invent information. A template submitted with no licence
+    // must come back saying so rather than being handed one.
+    check(
+      'template submitted without a license stays unlicensed',
+      (templateB.license || '') === '',
+      `got ${JSON.stringify(templateB.license)}`
+    );
+    check('unspecified version falls back to 1.0.0', (templateB.version || '') === '1.0.0', `got ${templateB.version}`);
+  }
+
+  /* ------------------------------------------------------- template reports */
+  section('Reporting (§7)');
+  {
+    const anon = await req('POST', `/api/templates/${templateB._id}/report`, {
+      body: { reason: 'Broken demo' },
+    });
+    check('anonymous report -> 401 with a helpful message', anon.res.status === 401 && /log in/i.test(anon.data.error || ''), JSON.stringify(anon.data));
+
+    const badReason = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: userToken,
+      body: { reason: 'I just do not like it' },
+    });
+    check('reason outside the list -> 400', badReason.res.status === 400, `got ${badReason.res.status}`);
+
+    const vague = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: userToken,
+      body: { reason: 'Other', description: ' ' },
+    });
+    check('"Other" with no description -> 400', vague.res.status === 400, `got ${vague.res.status}`);
+
+    const first = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: userToken,
+      body: { reason: 'Broken download', description: 'The link 404s.' },
+    });
+    check('valid report -> 201', first.res.status === 201, JSON.stringify(first.data));
+    check('report starts pending', first.data.report?.status === 'pending', `got ${first.data.report?.status}`);
+    const reportId = first.data.report?.id;
+
+    const dupe = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: userToken,
+      body: { reason: 'Broken demo' },
+    });
+    check(
+      'second open report for the same template -> 409, not a second row',
+      dupe.res.status === 409 && /already/i.test(dupe.data.error || ''),
+      `got ${dupe.res.status} ${JSON.stringify(dupe.data)}`
+    );
+
+    const otherUser = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: otherToken,
+      body: { reason: 'Copyright issue' },
+    });
+    check('a different person CAN report the same template', otherUser.res.status === 201, `got ${otherUser.res.status}`);
+
+    const nonAdmin = await req('GET', '/api/admin/reports', { token: userToken });
+    check('normal user GET /api/admin/reports -> 403', nonAdmin.res.status === 403, `got ${nonAdmin.res.status}`);
+    const nonAdminDev = await req('GET', '/api/admin/reports', { token: devToken });
+    check('developer GET /api/admin/reports -> 403', nonAdminDev.res.status === 403, `got ${nonAdminDev.res.status}`);
+
+    // Remembered for the moderation section below.
+    global.__smokeReportId = reportId;
+  }
+
+  /* ------------------------------------------------------ admin moderation */
+  section('Admin moderation, notifications + audit (§8, §12, §14, §35)');
+  {
+    const adminEmail = `smoke-admin-${STAMP}@example.com`;
+    const reg = await req('POST', '/api/auth/register', {
+      body: { name: `Smoke Admin ${STAMP}`, email: adminEmail, password: 'secret123', role: 'user' },
+    });
+    check('admin fixture registered', reg.res.status === 201, JSON.stringify(reg.data).slice(0, 120));
+
+    const promoted = await promoteToAdmin(adminEmail);
+    check('admin fixture promoted in the database (no HTTP path grants admin)', promoted === true);
+
+    const login = await req('POST', '/api/auth/login', { body: { email: adminEmail, password: 'secret123' } });
+    check('admin can log in', login.res.ok && !!login.data.token, JSON.stringify(login.data).slice(0, 120));
+    const adminToken = login.data.token;
+    check('role is admin after promotion', login.data.user?.role === 'admin', `got ${login.data.user?.role}`);
+
+    /* ---- §14 platform statistics */
+    const stats = await req('GET', '/api/admin/stats', { token: adminToken });
+    check('GET /api/admin/stats -> 200', stats.res.ok);
+    check(
+      'stats cover users, developers, templates, downloads and reports',
+      ['users', 'developers', 'templates', 'downloads', 'reports', 'suspended'].every(
+        (k) => typeof stats.data.stats?.[k] === 'number'
+      ),
+      JSON.stringify(stats.data.stats)
+    );
+    check('open reports are counted', stats.data.stats.reports >= 1, `got ${stats.data.stats.reports}`);
+
+    /* ---- §8 moderation queue */
+    const queue = await req('GET', '/api/admin/templates', { token: adminToken });
+    check('GET /api/admin/templates -> 200', queue.res.ok);
+    check('queue lists templates', Array.isArray(queue.data.templates) && queue.data.templates.length >= 2);
+
+    const pending = await req('GET', '/api/admin/templates?status=nonexistent', { token: adminToken });
+    check('unknown status filter is ignored rather than erroring', pending.res.ok);
+
+    /* ---- notifications arrive when a moderator decides (§12) */
+    const anonFeed = await req('GET', '/api/notifications');
+    check('anonymous GET /api/notifications -> 401', anonFeed.res.status === 401);
+
+    const reject = await req('PATCH', `/api/admin/templates/${templateA._id}/status`, {
+      token: adminToken,
+      body: { status: 'rejected' },
+    });
+    check('admin rejects a template -> 200', reject.res.ok, JSON.stringify(reject.data).slice(0, 140));
+
+    const feed = await req('GET', '/api/notifications', { token: devToken });
+    check('the author was notified', feed.data.unread >= 1, JSON.stringify(feed.data).slice(0, 200));
+    check(
+      'notification is about the right template',
+      (feed.data.notifications || []).some((n) => n.type === 'rejected'),
+      JSON.stringify(feed.data.notifications)
+    );
+
+    const again = await req('PATCH', `/api/admin/templates/${templateA._id}/status`, {
+      token: adminToken,
+      body: { status: 'rejected' },
+    });
+    check('repeating the same decision -> 200 but no duplicate notice', again.res.ok);
+    const feed2 = await req('GET', '/api/notifications', { token: devToken });
+    check('unread count did not move on a no-op', feed2.data.unread === feed.data.unread, `${feed2.data.unread} vs ${feed.data.unread}`);
+
+    /* ---- §35 audit log */
+    const audit = await req('GET', '/api/admin/audit', { token: adminToken });
+    check('GET /api/admin/audit -> 200', audit.res.ok);
+    check(
+      'rejection was recorded',
+      (audit.data.entries || []).some((e) => e.action === 'template.rejected' && e.adminId),
+      JSON.stringify((audit.data.entries || []).slice(0, 3))
+    );
+    const nonAdminAudit = await req('GET', '/api/admin/audit', { token: userToken });
+    check('normal user GET /api/admin/audit -> 403', nonAdminAudit.res.status === 403);
+
+    // Put it back so the catalogue looks the way it did.
+    const restore = await req('PATCH', `/api/admin/templates/${templateA._id}/status`, {
+      token: adminToken,
+      body: { status: 'approved' },
+    });
+    check('template restored to approved', restore.res.ok);
+
+    /* ---- §7 the report queue */
+    const reports = await req('GET', '/api/admin/reports', { token: adminToken });
+    check('GET /api/admin/reports -> 200', reports.res.ok);
+    check(
+      'the report we filed is in the queue with its author and template',
+      (reports.data.reports || []).some((r) => String(r._id) === String(global.__smokeReportId) && r.userId && r.templateId),
+      JSON.stringify((reports.data.reports || []).slice(0, 1))
+    );
+    check('status counts are returned', typeof reports.data.counts?.pending === 'number', JSON.stringify(reports.data.counts));
+
+    const badStatus = await req('PATCH', `/api/admin/reports/${global.__smokeReportId}`, {
+      token: adminToken,
+      body: { status: 'shrugged' },
+    });
+    check('invalid report status -> 400', badStatus.res.status === 400, `got ${badStatus.res.status}`);
+
+    const resolve = await req('PATCH', `/api/admin/reports/${global.__smokeReportId}`, {
+      token: adminToken,
+      body: { status: 'resolved' },
+    });
+    check('report resolved -> 200', resolve.res.ok, JSON.stringify(resolve.data).slice(0, 140));
+
+    const rer = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: userToken,
+      body: { reason: 'Broken download' },
+    });
+    check('once the old report is closed, a new one may be filed', rer.res.status === 201, `got ${rer.res.status}`);
+
+    const reporterFeed = await req('GET', '/api/notifications', { token: userToken });
+    check('the reporter was told the outcome', (reporterFeed.data.notifications || []).some((n) => n.type === 'report'), JSON.stringify(reporterFeed.data.notifications));
+
+    /* ---- reading the feed (re-read first: restoring the template above
+            handed the developer a second notification) */
+    const feedNow = await req('GET', '/api/notifications', { token: devToken });
+    const unreadBefore = feedNow.data.unread;
+    check('there is still something unread to work with', unreadBefore >= 1, `got ${unreadBefore}`);
+
+    const firstUnread = (feedNow.data.notifications || []).find((n) => !n.read);
+    if (firstUnread) {
+      const readOne = await req('PATCH', `/api/notifications/${firstUnread.id}/read`, { token: devToken });
+      check('mark one notification read -> 200', readOne.res.ok);
+      check('unread count dropped by one', readOne.data.unread === unreadBefore - 1, `${readOne.data.unread} vs ${unreadBefore}`);
+      const againRead = await req('PATCH', `/api/notifications/${firstUnread.id}/read`, { token: devToken });
+      check('marking it again is harmless', againRead.res.ok);
+      check('and does not move the counter below what is left', againRead.data.unread === unreadBefore - 1, `${againRead.data.unread}`);
+
+      const wrongOwner = await req('PATCH', `/api/notifications/${firstUnread.id}/read`, { token: otherToken });
+      check("another user's notification -> 404, never 200", wrongOwner.res.status === 404, `got ${wrongOwner.res.status}`);
+    } else {
+      check('a notification existed to mark read', false);
+    }
+
+    const all = await req('PATCH', '/api/notifications/read-all', { token: devToken });
+    check('mark all read -> 200', all.res.ok);
+    check('unread is 0 afterwards', all.data.unread === 0, `got ${all.data.unread}`);
+    const empty = await req('GET', '/api/notifications', { token: devToken });
+    check('feed confirms nothing is left unread', empty.data.unread === 0, `got ${empty.data.unread}`);
+    check('read notifications are still visible, not deleted', (empty.data.notifications || []).length >= 1, JSON.stringify(empty.data.notifications));
+
+    const badId = await req('PATCH', '/api/notifications/aaaaaaaaaaaaaaaaaaaaaaaa/read', { token: devToken });
+    check('unknown notification id -> 404', badId.res.status === 404, `got ${badId.res.status}`);
+
+    global.__smokeAdminToken = adminToken;
+  }
+
+  /* ------------------------------------------------- account status (§9) */
+  section('Account suspension (§9)');
+  {
+    const adminToken = global.__smokeAdminToken;
+    const victimEmail = `smoke-suspended-${STAMP}@example.com`;
+    const reg = await req('POST', '/api/auth/register', {
+      body: { name: 'Soon Suspended', email: victimEmail, password: 'secret123', role: 'user' },
+    });
+    check('suspension fixture registered', reg.res.status === 201);
+    const victimToken = reg.data.token;
+    const victimId = reg.data.user?.id;
+
+    const list = await req('GET', '/api/admin/users', { token: adminToken });
+    check('GET /api/admin/users -> 200', list.res.ok);
+    check(
+      'user list reports each account status',
+      (list.data.users || []).every((u) => u.status === 'active' || u.status === 'suspended'),
+      JSON.stringify((list.data.users || []).slice(0, 1))
+    );
+
+    const suspend = await req('PATCH', `/api/admin/users/${victimId}/status`, {
+      token: adminToken,
+      body: { status: 'suspended' },
+    });
+    check('admin suspends an account -> 200', suspend.res.ok, JSON.stringify(suspend.data).slice(0, 140));
+    check('reply says which account and to what', suspend.data.changed === true);
+
+    const login = await req('POST', '/api/auth/login', { body: { email: victimEmail, password: 'secret123' } });
+    check(
+      'a suspended account cannot log in',
+      login.res.status === 403 && login.data.code === 'ACCOUNT_SUSPENDED',
+      `got ${login.res.status} ${JSON.stringify(login.data)}`
+    );
+    check('the message is understandable', /suspended/i.test(login.data.error || ''), JSON.stringify(login.data));
+
+    // The token was issued BEFORE the suspension and is still valid for days,
+    // so this is the check that actually matters.
+    const saved = await req('POST', `/api/templates/${templateA._id}/favorite`, { token: victimToken, body: {} });
+    check(
+      "an existing token cannot save while suspended",
+      saved.res.status === 403 && saved.data.code === 'ACCOUNT_SUSPENDED',
+      `got ${saved.res.status} ${JSON.stringify(saved.data)}`
+    );
+    const settings = await req('PUT', '/api/users/me', { token: victimToken, body: { bio: 'still here' } });
+    check('an existing token cannot edit the profile while suspended', settings.res.status === 403, `got ${settings.res.status}`);
+    const dl = await req('POST', `/api/templates/${templateA.slug}/download`, { token: victimToken });
+    check('an existing token cannot download while suspended', dl.res.status === 403, `got ${dl.res.status}`);
+
+    // Reads stay open so the client can explain what happened.
+    const me = await req('GET', '/api/auth/me', { token: victimToken });
+    check('GET /api/auth/me still answers while suspended', me.res.ok, JSON.stringify(me.data).slice(0, 140));
+    check('the session payload says the account is suspended', me.data.user?.status === 'suspended', `got ${me.data.user?.status}`);
+
+    const feed = await req('GET', '/api/notifications', { token: victimToken });
+    check('the account was told why it was suspended', (feed.data.notifications || []).some((n) => n.type === 'account' && /suspend/i.test(n.title)), JSON.stringify(feed.data.notifications));
+
+    const audit = await req('GET', '/api/admin/audit', { token: adminToken });
+    check('suspension was written to the audit log', (audit.data.entries || []).some((e) => e.action === 'user.suspended'), JSON.stringify((audit.data.entries || []).slice(0, 3)));
+
+    /* ---- an admin cannot lock themselves out */
+    const adminMe = await req('GET', '/api/auth/me', { token: adminToken });
+    const adminId = adminMe.data.user?.id;
+    const selfSuspend2 = await req('PATCH', `/api/admin/users/${adminId}/status`, {
+      token: adminToken,
+      body: { status: 'suspended' },
+    });
+    check('self-suspension refused -> 400', selfSuspend2.res.status === 400, `got ${selfSuspend2.res.status}`);
+
+    /* ---- and it is reversible */
+    const unsuspend = await req('PATCH', `/api/admin/users/${victimId}/status`, {
+      token: adminToken,
+      body: { status: 'active' },
+    });
+    check('admin lifts the suspension', unsuspend.res.ok && unsuspend.data.changed === true, JSON.stringify(unsuspend.data));
+
+    const back = await req('POST', '/api/auth/login', { body: { email: victimEmail, password: 'secret123' } });
+    check('the account can sign in again', back.res.ok, JSON.stringify(back.data).slice(0, 140));
+
+    const badStatus = await req('PATCH', `/api/admin/users/${victimId}/status`, {
+      token: adminToken,
+      body: { status: 'banned' },
+    });
+    check('unknown status -> 400', badStatus.res.status === 400, `got ${badStatus.res.status}`);
+  }
+
+  /* --------------------------------------------------- developer analytics */
+  section('Developer analytics (§13)');
+  {
+    const stats = await req('GET', '/api/templates/mine/stats', { token: devToken });
+    check('GET /api/templates/mine/stats -> 200', stats.res.ok, JSON.stringify(stats.data).slice(0, 160));
+    const t = stats.data.totals || {};
+    check('totals cover templates, downloads and favorites', ['templates', 'downloads', 'favorites'].every((k) => typeof t[k] === 'number'), JSON.stringify(t));
+    check('template totals reconcile with the list', t.templates === (stats.data.perTemplate || []).length, `${t.templates} vs ${(stats.data.perTemplate || []).length}`);
+    check('downloads per template are listed', Array.isArray(stats.data.perTemplate) && stats.data.perTemplate.length >= 1);
+    check('downloads reconcile with the total', t.downloads === (stats.data.perTemplate || []).reduce((n, p) => n + (p.downloadCount || 0), 0), JSON.stringify({ totals: t, perTemplate: stats.data.perTemplate }));
+    check('most downloaded template identified', stats.data.mostDownloaded && stats.data.mostDownloaded.downloadCount > 0, JSON.stringify(stats.data.mostDownloaded));
+    check('most downloaded is actually this developer\'s own work', stats.data.mostDownloaded ? (stats.data.perTemplate || []).some((p) => String(p.id) === String(stats.data.mostDownloaded._id)) : false);
+    check('recent downloads listed', Array.isArray(stats.data.recentDownloads) && stats.data.recentDownloads.length >= 1, JSON.stringify(stats.data.recentDownloads.slice(0, 2)));
+    check('recent downloads expose no user identity', (stats.data.recentDownloads || []).every((r) => !('userId' in r) && !('user' in r)));
+
+    const asUser = await req('GET', '/api/templates/mine/stats', { token: userToken });
+    check('normal user GET /mine/stats -> 403', asUser.res.status === 403, `got ${asUser.res.status}`);
+    const anon = await req('GET', '/api/templates/mine/stats');
+    check('anonymous GET /mine/stats -> 401', anon.res.status === 401);
+  }
+
+  /* ------------------------------------------------------------------ cors */
+  // A failure mode node can never see: this suite sends no Origin header and
+  // no preflight, so a method missing from the CORS allow-list passes every
+  // check below and still breaks the app in a browser. PATCH is what every
+  // moderation decision, account-status change and notification read uses
+  // (§8, §9, §12), so each verb the client actually sends is named here.
+  section('CORS preflight (browser)');
+  {
+    const preflight = async (method, path) => {
+      const res = await fetch(API + path, {
+        method: 'OPTIONS',
+        headers: {
+          origin: 'http://localhost:5173',
+          'access-control-request-method': method,
+          'access-control-request-headers': 'authorization,content-type',
+        },
+      });
+      return {
+        status: res.status,
+        methods: (res.headers.get('access-control-allow-methods') || '').toUpperCase(),
+        origin: res.headers.get('access-control-allow-origin'),
+      };
+    };
+
+    for (const [method, path] of [
+      ['GET', '/api/templates'],
+      ['POST', '/api/auth/login'],
+      ['PUT', '/api/users/me'],
+      ['PATCH', '/api/admin/templates/000000000000000000000000/status'],
+      ['PATCH', '/api/notifications/read-all'],
+      ['DELETE', '/api/templates/000000000000000000000000'],
+    ]) {
+      const r = await preflight(method, path);
+      check(
+        `preflight ${method} is allowed`,
+        r.status < 400 && r.methods.includes(method) && !!r.origin,
+        `status=${r.status} allow-methods="${r.methods}" allow-origin="${r.origin}"`
+      );
+    }
+
+    const simple = await fetch(`${API}/api/templates`, {
+      headers: { origin: 'http://localhost:5173' },
+    });
+    check(
+      'cross-origin GET echoes Origin',
+      !!simple.headers.get('access-control-allow-origin'),
+      String(simple.headers.get('access-control-allow-origin'))
+    );
   }
 
   /* --------------------------------------------------------------- health */

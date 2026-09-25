@@ -50,7 +50,16 @@ if (process.env.NODE_ENV === 'production' && !configuredOrigins.length) {
   console.warn('⚠️  CORS_ORIGINS is not set -- allowing requests from any origin.');
 }
 
-app.use(cors({ origin: allowOrigin, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }));
+// PATCH is load-bearing: moderation decisions (§8/§14), account status (§9)
+// and notification reads (§12) are all partial updates. Without it the
+// preflight rejects them -- a failure that only shows up in a browser, since
+// the node-based smoke suite never sends an Origin header or a preflight.
+app.use(
+  cors({
+    origin: allowOrigin,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  })
+);
 
 // ===== BODY PARSING =====
 app.use(express.json({ limit: '1mb' }));
@@ -90,6 +99,9 @@ app.use('/api/meta', require('./routes/meta'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/developers', require('./routes/developers'));
 app.use('/api/admin', require('./routes/admin'));
+// Spec §12. Mounted as its own resource so the navbar bell does not have to
+// reach into /api/users for something that is not a user setting.
+app.use('/api/notifications', require('./routes/notifications'));
 
 // ===== UPLOADED FILES =====
 // Thumbnails are public so cards render without a token; template archives are

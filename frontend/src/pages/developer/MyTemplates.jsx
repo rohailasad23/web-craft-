@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
 import { useToast } from '../../components/Common/Toast';
+import { useConfirm } from '../../components/Common/ConfirmDialog';
 import { formatDate, formatCount, mediaUrl } from '../../lib/format';
 import { RowSkeleton } from '../../components/Common/Skeletons';
 import { StatusBadge } from './Dashboard';
@@ -10,15 +11,20 @@ import Footer from '../../components/Common/Footer';
 /**
  * /developer/templates -- the developer's submissions with edit / delete
  * (spec §6 "Edit button", §17).
+ *
+ * Deletion asks first through the shared confirmation dialog (spec §19) and
+ * says what will be lost, rather than swapping a "Delete" button for a
+ * "Yes, delete" one in place -- the second button sits exactly where the
+ * first was, so a fast double-click could reach it before the swap settles.
  */
 export default function MyTemplates() {
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [templates, setTemplates] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [confirming, setConfirming] = useState('');
   const [deleting, setDeleting] = useState('');
 
   useEffect(() => {
@@ -35,6 +41,20 @@ export default function MyTemplates() {
   }, []);
 
   const handleDelete = async (template) => {
+    const ok = await confirm({
+      title: `Delete “${template.title}”?`,
+      body: `The archive, screenshots and download history are removed for everyone${
+        template.downloadCount
+          ? `, including ${formatCount(template.downloadCount)} download${
+              template.downloadCount === 1 ? '' : 's'
+            }`
+          : ''
+      }. This cannot be undone.`,
+      confirmLabel: 'Delete template',
+      tone: 'danger',
+    });
+    if (!ok) return;
+
     setDeleting(template._id);
     try {
       await api.delete(`/api/templates/${template._id}`);
@@ -44,7 +64,6 @@ export default function MyTemplates() {
       toast.error(getErrorMessage(err, 'Could not delete this template'));
     } finally {
       setDeleting('');
-      setConfirming('');
     }
   };
 
@@ -92,7 +111,6 @@ export default function MyTemplates() {
           ) : (
             <ul className="stagger ui-card divide-y divide-ink-100 overflow-hidden !p-0">
               {list.map((t) => {
-                const isConfirming = confirming === t._id;
                 const isDeleting = deleting === t._id;
                 return (
                   <li key={t._id} className="p-4 sm:p-5">
@@ -133,34 +151,20 @@ export default function MyTemplates() {
                           ✎ Edit
                         </Link>
 
-                        {isConfirming ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(t)}
-                              disabled={isDeleting}
-                              className="ui-btn animate-fade-quick !border-red-200 !bg-red-50 !px-3 !py-2 !text-xs !text-red-600 hover:!bg-red-100"
-                            >
-                              {isDeleting ? 'Deleting…' : 'Yes, delete'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirming('')}
-                              disabled={isDeleting}
-                              className="ui-btn ui-btn--ghost animate-fade-quick !px-3 !py-2 !text-xs"
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setConfirming(t._id)}
-                            className="ui-btn ui-btn--ghost !px-3 !py-2 !text-xs hover:!border-red-200 hover:!text-red-600"
-                          >
-                            🗑 Delete
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(t)}
+                          disabled={isDeleting}
+                          className="ui-btn ui-btn--ghost !px-3 !py-2 !text-xs hover:!border-red-200 hover:!bg-red-50 hover:!text-red-600"
+                        >
+                          {isDeleting ? (
+                            <>
+                              <span className="ui-spinner" aria-hidden /> Deleting…
+                            </>
+                          ) : (
+                            '🗑 Delete'
+                          )}
+                        </button>
                       </div>
                     </div>
                   </li>

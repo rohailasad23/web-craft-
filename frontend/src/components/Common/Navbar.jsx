@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../../lib/session';
 import { initials } from '../../lib/format';
+import NotificationBell from './NotificationBell';
 
 const BASE_LINKS = [
   { to: '/', label: 'Home' },
@@ -22,6 +23,11 @@ const DEVELOPER_LINKS = [
   { to: '/developer/templates', label: 'My Templates' },
   { to: '/developer/upload', label: 'Upload Template' },
 ];
+
+// Spec §8: moderation lives behind a link that only ever renders for an admin.
+// It is not a defence -- ProtectedRoute and requireRole() are -- it is so a
+// normal user never sees a door they cannot open.
+const ADMIN_LINKS = [{ to: '/admin', label: 'Admin' }];
 
 const PROFILE_LINK = { to: '/profile', label: 'Profile' };
 
@@ -62,11 +68,12 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const isDeveloper = user?.role === 'developer' || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
 
   const navLinks = !isAuthenticated
     ? [...BASE_LINKS, ...SIGNED_OUT_EXTRA]
     : isDeveloper
-      ? [...BASE_LINKS, ...DEVELOPER_LINKS, PROFILE_LINK]
+      ? [...BASE_LINKS, ...DEVELOPER_LINKS, ...(isAdmin ? ADMIN_LINKS : []), PROFILE_LINK]
       : [...BASE_LINKS, ...USER_LINKS, PROFILE_LINK];
 
   const handleLogout = () => {
@@ -147,6 +154,7 @@ export default function Navbar() {
         {/* Top-right cluster: auth actions + the menu trigger. Rendered at
             every width so Login / Sign up are always in the corner. */}
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {isAuthenticated && <NotificationBell />}
           {authButtons}
           <button
             type="button"

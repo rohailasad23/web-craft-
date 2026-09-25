@@ -12,6 +12,27 @@ const { CATEGORIES } = require('../constants/catalog');
  */
 const STATUSES = ['pending', 'approved', 'rejected'];
 
+/**
+ * Spec §32: an OPTIONAL licence the developer states for their own work.
+ * The empty string is the honest default -- a template ships with no licence
+ * unless its author says so, and the UI renders that as "License not
+ * specified." rather than inventing one (§31: do not invent information).
+ */
+const LICENSES = ['', 'MIT', 'Apache 2.0', 'GPL', 'Personal Use', 'Other'];
+
+/**
+ * Spec §6: one entry per published update. Deliberately a flat list, not a
+ * version tree -- the spec explicitly asks NOT to build a Git-like system
+ * (§5). Newest first is the order the details page reads.
+ */
+const changelogSchema = new mongoose.Schema(
+  {
+    version: { type: String, trim: true, maxlength: 20, default: '' },
+    notes: { type: [String], default: [] },
+  },
+  { timestamps: true }
+);
+
 /** URL-friendly slug: lowercase, alphanumerics and single dashes. */
 function slugify(value) {
   return String(value)
@@ -73,6 +94,16 @@ const templateSchema = new mongoose.Schema(
     // same way downloadCount tracks distinct downloads. It is what makes
     // spec §3's "Most Popular" a different answer from "Most Downloaded".
     favoriteCount: { type: Number, default: 0 },
+
+    // Spec §5: the developer's own version string for this template. It is
+    // authored, never computed -- there is no diffing, no history tree and no
+    // auto-bumping, exactly as §5 asks to avoid.
+    version: { type: String, trim: true, maxlength: 20, default: '1.0.0' },
+    // Spec §6: optional notes the developer writes when they update it.
+    changelog: { type: [changelogSchema], default: [] },
+    // Spec §32: empty means "not specified", never a default licence.
+    license: { type: String, enum: LICENSES, default: '' },
+
     status: { type: String, enum: STATUSES, default: 'approved' },
     featured: { type: Boolean, default: false },
   },
@@ -98,4 +129,5 @@ templateSchema.index({ updatedAt: -1, status: 1 });
 
 module.exports = mongoose.model('Template', templateSchema);
 module.exports.STATUSES = STATUSES;
+module.exports.LICENSES = LICENSES;
 module.exports.slugify = slugify;

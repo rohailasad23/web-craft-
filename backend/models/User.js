@@ -7,6 +7,8 @@ const bcrypt = require('bcryptjs');
 const ROLES = ['user', 'developer', 'admin'];
 /** The only roles a client may choose between at registration. */
 const ASSIGNABLE_ROLES = ['user', 'developer'];
+/** Spec §9: a suspended account keeps its data but cannot sign in. */
+const STATUSES = ['active', 'suspended'];
 
 const userSchema = new mongoose.Schema(
   {
@@ -30,6 +32,17 @@ const userSchema = new mongoose.Schema(
     // ASSIGNABLE_ROLES and drops `role` entirely from profile updates.
     role: { type: String, enum: ROLES, default: 'user', index: true },
 
+    // Spec §9: 'active' for everyone by default. Only an admin endpoint may
+    // change it (routes/admin.js); registration and profile updates never
+    // read this field, so nobody can un-suspend themselves.
+    status: { type: String, enum: STATUSES, default: 'active', index: true },
+
+    // Spec §33: architecture only. Nothing sets this to true -- the platform
+    // does not verify anyone yet, and claiming otherwise would be a lie.
+    // Registration and profile updates drop it, so it can only ever be
+    // flipped by an admin later.
+    isVerified: { type: Boolean, default: false, select: false },
+
     avatar: { type: String, trim: true, default: '' },
     bio: { type: String, trim: true, maxlength: 500, default: '' },
   },
@@ -49,3 +62,4 @@ userSchema.methods.comparePassword = function (candidate) {
 module.exports = mongoose.model('User', userSchema);
 module.exports.ROLES = ROLES;
 module.exports.ASSIGNABLE_ROLES = ASSIGNABLE_ROLES;
+module.exports.STATUSES = STATUSES;

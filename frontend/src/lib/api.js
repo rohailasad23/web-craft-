@@ -12,6 +12,16 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
  */
 const api = axios.create({ baseURL: API_URL });
 
+/**
+ * Mirrors what the stored session claims about account status, so the client
+ * can spot a stale one without re-reading localStorage on every response.
+ * App.jsx keeps this in sync.
+ */
+let suspendedSession = false;
+export function setSuspendedSession(value) {
+  suspendedSession = Boolean(value);
+}
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -19,7 +29,19 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // A write that requireActive() allowed is proof the stored status is out
+    // of date: while suspended, every write comes back 403 ACCOUNT_SUSPENDED.
+    // Re-reading /me clears the banner as soon as an admin lifts the
+    // suspension -- without any polling, which §36 rules out. Reads are
+    // deliberately skipped because they keep working while suspended, so they
+    // would re-check on every page view of an open tab.
+    const method = (response.config?.method || 'get').toLowerCase();
+    if (suspendedSession && method !== 'get' && method !== 'head') {
+      window.dispatchEvent(new Event('account:recheck'));
+    }
+    return response;
+  },
   (error) => {
     const status = error.response?.status;
     const url = error.config?.url || '';
@@ -31,6 +53,15 @@ api.interceptors.response.use(
       localStorage.removeItem('user');
       window.dispatchEvent(new Event('auth:expired'));
     }
+
+    // Spec §9: a suspension can happen mid-session (an admin clicks while the
+    // user is reading a page), so the client hears about it the moment the
+    // server refuses an action rather than waiting for a page reload to
+    // discover a status field nobody fetched.
+    if (status === 403 && error.response?.data?.code === 'ACCOUNT_SUSPENDED') {
+      window.dispatchEvent(new Event('account:suspended'));
+    }
+
     return Promise.reject(error);
   }
 );

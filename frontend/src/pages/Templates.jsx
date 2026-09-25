@@ -4,6 +4,7 @@ import api, { getErrorMessage } from '../lib/api';
 import SearchFilters from '../components/Templates/SearchFilters';
 import TemplateCard from '../components/Templates/TemplateCard';
 import { TemplateGridSkeleton } from '../components/Common/Skeletons';
+import Breadcrumbs from '../components/Common/Breadcrumbs';
 import Footer from '../components/Common/Footer';
 
 const PAGE_SIZE = 12;
@@ -93,6 +94,22 @@ export default function Templates() {
         ref={topRef}
         className="mx-auto w-full max-w-7xl flex-1 scroll-mt-24 px-5 pb-16 pt-10 sm:px-6"
       >
+        {/* Spec §29: only when there is a level below Home/Templates -- a
+            two-stop breadcrumb on a top-level page is noise, not orientation. */}
+        {(q || filter !== 'All') && (
+          <Breadcrumbs
+            className="mb-4"
+            items={[
+              { label: 'Templates', to: '/templates' },
+              ...(q
+                ? [{ label: `Results for “${q}”` }]
+                : filter !== 'All'
+                  ? [{ label: filter }]
+                  : []),
+            ]}
+          />
+        )}
+
         <header className="animate-fade-up">
           <span className="ui-eyebrow">Library</span>
           <h1 className="ui-title mt-2 text-3xl sm:text-4xl">

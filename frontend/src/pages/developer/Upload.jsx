@@ -11,6 +11,10 @@ const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_SHOTS = 5;
 // Mirrors MAX_TAGS on the server (spec §2).
 const MAX_TAGS = 8;
+// Mirrors LICENSES on the server (spec §32). The leading '' is the empty
+// option in the select and means "not specified" -- it is a real choice, not
+// a placeholder the form should silently replace.
+const LICENSES = ['', 'MIT', 'Apache 2.0', 'GPL', 'Personal Use', 'Other'];
 
 /**
  * /developer/upload  and  /developer/upload/:id
@@ -35,6 +39,12 @@ export default function UploadTemplate() {
     tags: [],
     previewUrl: '',
     githubUrl: '',
+    // Spec §5 (version) and §32 (licence). Both optional; an empty licence
+    // means "not specified" and is the only value the details page will
+    // report as missing rather than inventing one.
+    version: '1.0.0',
+    license: '',
+    changelogNotes: '',
   });
   const [archive, setArchive] = useState(null);
   const [thumbnail, setThumbnail] = useState(null);
@@ -69,6 +79,9 @@ export default function UploadTemplate() {
           tags: found.tags || [],
           previewUrl: found.previewUrl || '',
           githubUrl: found.githubUrl || '',
+          version: found.version || '1.0.0',
+          license: found.license || '',
+          changelogNotes: '',
         });
         setThumbnailUrl(found.thumbnail || '');
         setExistingShots(found.screenshots || []);
@@ -141,6 +154,11 @@ export default function UploadTemplate() {
       if (!form.category) out.category = 'Choose a category';
       if (form.technologies.length === 0) out.technologies = 'Pick at least one technology';
       if (!isEdit && !archive) out.archive = 'Upload the .zip file';
+      // Spec §5 -- loose on purpose: nothing parses or diffs this string, so
+      // "it looks like a version" is the only bar worth setting.
+      if (!/^\d[\dA-Za-z.\-+]{0,19}$/.test(form.version.trim())) {
+        out.version = 'Version should look like 1.0.0';
+      }
     }
     return out;
   }, [form, touched, archive, isEdit]);
@@ -175,6 +193,14 @@ export default function UploadTemplate() {
       return;
     }
 
+    // Spec §5: checked here so the message is about *this* field rather than
+    // a generic "fix the highlighted fields" with nothing visibly wrong.
+    if (!/^\d[\dA-Za-z.\-+]{0,19}$/.test(form.version.trim())) {
+      setError('Version should look like 1.0.0 (1.0, 2.1.4 and 1.1.0-beta are all fine).');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
     setSaving(true);
     setError('');
 
@@ -187,6 +213,13 @@ export default function UploadTemplate() {
       body.set('tags', JSON.stringify(form.tags));
       body.set('previewUrl', form.previewUrl.trim());
       body.set('githubUrl', form.githubUrl.trim());
+      body.set('version', form.version.trim());
+      body.set('license', form.license);
+      // Spec §6: an optional note about what changed, only on an edit. An
+      // empty box sends nothing, so no empty changelog entry is written.
+      if (isEdit && form.changelogNotes.trim()) {
+        body.set('changelogNotes', form.changelogNotes.trim());
+      }
 
       if (archive) body.set('file', archive, archive.name);
       if (thumbnail) body.set('thumbnail', thumbnail, thumbnail.name);
@@ -618,6 +651,68 @@ export default function UploadTemplate() {
                 className="ui-input"
               />
             </Field>
+          </section>
+
+          {/* ------------------------------------------------ release info */}
+          {/* Spec §5 (version), §32 (licence) and §6 (changelog note). All
+              optional on purpose: a developer who does not track versions
+              should not be blocked from publishing, and an empty licence has
+              to stay "not specified" rather than be filled in for them. */}
+          <section className="ui-card space-y-5 p-6">
+            <h2 className="text-base font-bold text-ink-900">
+              Release details <span className="text-sm font-normal text-ink-500">(optional)</span>
+            </h2>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field
+                label="Version"
+                htmlFor="version"
+                hint="Shown on the template page."
+                error={errors.version}
+              >
+                <input
+                  id="version"
+                  value={form.version}
+                  onChange={update('version')}
+                  placeholder="1.0.0"
+                  className="ui-input"
+                />
+              </Field>
+
+              <Field label="License" htmlFor="license" hint="Leave as “Not specified” if none applies.">
+                <select
+                  id="license"
+                  value={form.license}
+                  onChange={update('license')}
+                  className="ui-input"
+                >
+                  <option value="">Not specified</option>
+                  {LICENSES.filter(Boolean).map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {/* Only meaningful once there is a previous version to differ from. */}
+            {isEdit && (
+              <Field
+                label="What changed in this version?"
+                htmlFor="changelogNotes"
+                hint="One point per line. Leave blank to record nothing."
+              >
+                <textarea
+                  id="changelogNotes"
+                  rows={4}
+                  value={form.changelogNotes}
+                  onChange={update('changelogNotes')}
+                  className="ui-input"
+                  placeholder={'Faster hero animation\nFixed the mobile navigation'}
+                />
+              </Field>
+            )}
           </section>
 
           {/* ------------------------------------------------ submit */}

@@ -7,13 +7,15 @@ const path = require('path');
 
 const asyncHandler = require('../middleware/asyncHandler');
 const verifyToken = require('../middleware/auth');
-const { requireRole, optionalAuth } = require('../middleware/auth');
+const { requireRole, optionalAuth, requireActive } = require('../middleware/auth');
 const { handleUpload } = require('../middleware/upload');
 const { SORTS, CATEGORIES } = require('../constants/catalog');
 const User = require('../models/User');
 const Template = require('../models/Template');
+const { LICENSES } = require('../models/Template');
 const Download = require('../models/Download');
 const Favorite = require('../models/Favorite');
+const Report = require('../models/Report');
 const { makeThumbnail } = require('../services/placeholders');
 const storage = require('../services/storage');
 
@@ -267,6 +269,86 @@ router.get(
 );
 
 /**
+ * GET /api/templates/mine/stats -- spec §13: the developer dashboard's numbers.
+ *
+ * Deliberately built from the developer's OWN templates rather than an
+ * aggregation over the whole collection: it keeps every figure explainable
+ * ("these are your templates, added up"), needs no extra index, and §13 says
+ * in as many words not to build complicated analytics yet.
+ *
+ * Sums are done in JavaScript because the list is small and bounded -- one
+ * developer's submissions -- and it avoids mongoose's aggregate needing an
+ * explicitly cast ObjectId for every run.
+ */
+router.get(
+  '/mine/stats',
+  verifyToken,
+  requireRole('developer', 'admin'),
+  asyncHandler(async (req, res) => {
+    const own = await Template.find({ author: req.user.id })
+      .select(
+        'title slug downloadCount favoriteCount status thumbnail category createdAt updatedAt'
+      )
+      .sort({ downloadCount: -1, createdAt: -1 })
+      .lean();
+
+    const sum = (key) => own.reduce((n, t) => n + (t[key] || 0), 0);
+    const count = (status) => own.filter((t) => t.status === status).length;
+
+    const totals = {
+      templates: own.length,
+      downloads: sum('downloadCount'),
+      favorites: sum('favoriteCount'),
+      approved: count('approved'),
+      pending: count('pending'),
+      rejected: count('rejected'),
+    };
+
+    // "Most downloaded" is only meaningful once something HAS been downloaded;
+    // reporting a zero-download template as a winner would be a made-up
+    // statistic (§14: do not add fake statistics).
+    const mostDownloaded = own.find((t) => (t.downloadCount || 0) > 0) || null;
+
+    const ids = own.map((t) => t._id);
+    const rows = ids.length
+      ? await Download.find({ templateId: { $in: ids } })
+          .sort({ downloadedAt: -1 })
+          .limit(10)
+          .populate({ path: 'templateId', select: 'title slug' })
+          .lean()
+      : [];
+
+    res.json({
+      success: true,
+      totals,
+      // A compact bar chart does not need the whole document.
+      perTemplate: own.map((t) => ({
+        id: t._id,
+        title: t.title,
+        slug: t.slug,
+        status: t.status,
+        category: t.category,
+        downloadCount: t.downloadCount || 0,
+        favoriteCount: t.favoriteCount || 0,
+        // Included so the dashboard can serve every section it needs from
+        // this one request instead of also calling /mine (§36).
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+      })),
+      mostDownloaded,
+      // Template title + when, no downloader identity: the developer needs to
+      // know their work is being used, not who is using it.
+      recentDownloads: rows
+        .filter((r) => r.templateId)
+        .map((r) => ({
+          template: { title: r.templateId.title, slug: r.templateId.slug },
+          downloadedAt: r.downloadedAt,
+        })),
+    });
+  })
+);
+
+/**
  * POST /api/templates -- developers submit a template (multipart or JSON).
  * Storage-first: only the file *reference* is written to MongoDB.
  */
@@ -302,6 +384,17 @@ router.post(
     if (previewUrl === null) return res.status(400).json({ error: 'Demo URL must be a valid http(s) URL' });
     if (githubUrl === null) return res.status(400).json({ error: 'GitHub URL must be a valid http(s) URL' });
 
+    // Spec §5 / §32: both optional. Omitting them leaves the schema defaults
+    // ("1.0.0" and, importantly, NO licence) rather than inventing either.
+    const version = String(req.body.version || '').trim().slice(0, 20) || '1.0.0';
+    if (!/^\d[\dA-Za-z.\-+]{0,19}$/.test(version)) {
+      return res.status(400).json({ error: 'Version should look like 1.0.0' });
+    }
+    const license = String(req.body.license || '').trim();
+    if (!LICENSES.includes(license)) {
+      return res.status(400).json({ error: 'Please choose a valid license' });
+    }
+
     const uploads = collectUploads(req);
     if (!uploads.file) {
       return res.status(400).json({ error: 'Please upload the template .zip file' });
@@ -323,6 +416,8 @@ router.post(
       screenshots: uploads.screenshots || [],
       previewUrl: previewUrl || '',
       githubUrl: githubUrl || '',
+      version,
+      license,
       file: uploads.file,
       author: author._id,
       authorName: author.name,
@@ -423,6 +518,25 @@ router.put(
       updates.githubUrl = u;
     }
 
+    // Spec §5: the developer's own version string for this release. Author-supplied
+    // and free-form within reason -- there is nothing to diff or merge, so a
+    // loose "looks like a version" check is the right level of strictness.
+    if (req.body.version !== undefined) {
+      const v = String(req.body.version).trim().slice(0, 20);
+      if (!/^\d[\dA-Za-z.\-+]{0,19}$/.test(v)) {
+        return res.status(400).json({ error: 'Version should look like 1.0.0' });
+      }
+      updates.version = v;
+    }
+    // Spec §32: '' means "not specified" and is the only way to clear it.
+    if (req.body.license !== undefined) {
+      const lic = String(req.body.license).trim();
+      if (!LICENSES.includes(lic)) {
+        return res.status(400).json({ error: 'Please choose a valid license' });
+      }
+      updates.license = lic;
+    }
+
     const uploads = collectUploads(req);
     const stale = [];
 
@@ -440,6 +554,23 @@ router.put(
     }
 
     Object.assign(template, updates);
+
+    // Spec §6: an OPTIONAL note about what changed. Written only when the
+    // developer actually typed something, because an empty changelog entry is
+    // noise on the details page. Bullets are stripped so "• Faster" and
+    // "- Faster" and a bare "Faster" all read the same once rendered.
+    const notes = String(req.body.changelogNotes || '')
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^\s*[-•*]\s*/, '').trim())
+      .filter(Boolean)
+      .slice(0, 12);
+    if (notes.length) {
+      // Newest first, capped so a template updated 400 times cannot hand the
+      // details page an unbounded list.
+      template.changelog.unshift({ version: updates.version || template.version, notes });
+      if (template.changelog.length > 20) template.changelog = template.changelog.slice(0, 20);
+    }
+
     await template.save();
 
     // Only unlink old files once the new document is safely persisted.
@@ -468,6 +599,9 @@ router.delete(
       Template.deleteOne({ _id: template._id }),
       Download.deleteMany({ templateId: template._id }),
       Favorite.deleteMany({ templateId: template._id }),
+      // Reports are about this template and nothing else; leaving them would
+      // hand the moderation queue a row whose subject no longer exists.
+      Report.deleteMany({ templateId: template._id }),
     ]);
 
     deleteUrls([
@@ -497,6 +631,7 @@ router.post(
     next();
   },
   verifyToken,
+  requireActive,
   asyncHandler(async (req, res) => {
     const template = await Template.findById(req.params.id).select('_id status author');
     if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {
@@ -540,6 +675,7 @@ router.delete(
     next();
   },
   verifyToken,
+  requireActive,
   asyncHandler(async (req, res) => {
     const template = await Template.findById(req.params.id).select('_id');
     if (!template) return res.status(404).json({ error: 'Template not found' });
@@ -564,6 +700,68 @@ router.delete(
 );
 
 /**
+ * POST /api/templates/:id/report -- spec §7.
+ *
+ * Logged-in users only. Two layers of protection, because a checkbox is not
+ * protection:
+ *   1. the partial unique index on Report refuses a second OPEN report from
+ *      the same person about the same template (409, not a silent drop, so
+ *      the UI can say "you already told us"), and
+ *   2. the global /api rate limiter covers the rest.
+ */
+router.post(
+  '/:id/report',
+  (req, res, next) => {
+    if (!req.headers.authorization) {
+      return res.status(401).json({ error: 'Please log in to report this template.' });
+    }
+    next();
+  },
+  verifyToken,
+  requireActive,
+  asyncHandler(async (req, res) => {
+    const template = await Template.findById(req.params.id).select('_id status author');
+    if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    const reason = String(req.body.reason || '').trim();
+    if (!Report.REASONS.includes(reason)) {
+      return res.status(400).json({ error: 'Please choose a reason for your report' });
+    }
+
+    // "Other" with no explanation sends a moderator nowhere; everything else
+    // is self-describing and needs no typing.
+    const description = String(req.body.description || '').trim().slice(0, 1000);
+    if (reason === 'Other' && description.length < 5) {
+      return res.status(400).json({ error: 'Please describe the problem so we can look into it' });
+    }
+
+    try {
+      const report = await Report.create({
+        userId: req.user.id,
+        templateId: template._id,
+        reason,
+        description,
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Thanks -- your report has been sent for review.',
+        report: { id: report._id, status: report.status },
+      });
+    } catch (err) {
+      if (err?.code === 11000) {
+        return res
+          .status(409)
+          .json({ error: 'You already have an open report for this template.' });
+      }
+      throw err;
+    }
+  })
+);
+
+/**
  * POST /api/templates/:slug/download -- spec §9:
  * verify login -> record the download -> increment -> start the file download.
  *
@@ -580,6 +778,7 @@ router.post(
     next();
   },
   verifyToken,
+  requireActive,
   asyncHandler(async (req, res) => {
     const template = await Template.findOne({ slug: req.params.slug });
     if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {

@@ -264,6 +264,16 @@
   }
   .ui-btn--success:hover { box-shadow: 0 14px 30px -14px rgb(16 185 129 / 0.75); }
 
+  /* Destructive confirm buttons (spec §19). Deliberately flat red rather than
+     a gradient: the palette already uses brand gradients for "go", and an
+     irreversible action should not look like the friendliest button on screen. */
+  .ui-btn--danger {
+    background: #dc2626;
+    color: #fff;
+    box-shadow: var(--shadow-soft);
+  }
+  .ui-btn--danger:hover { background: #b91c1c; box-shadow: 0 14px 30px -14px rgb(220 38 38 / 0.7); }
+
   .ui-btn--ghost {
     background: transparent;
     color: var(--color-ink-700);

@@ -49,8 +49,11 @@ function requireRole(...roles) {
     if (!req.user?.id) return res.status(401).json({ error: 'Authentication required' });
 
     try {
-      const user = await User.findById(req.user.id).select('role').lean();
+      // One read answers both questions: role (never trusted from the token)
+      // and account status (spec §9).
+      const user = await User.findById(req.user.id).select('role status').lean();
       if (!user) return res.status(401).json({ error: 'Account no longer exists' });
+      if (user.status === 'suspended') return suspended(res);
       if (!roles.includes(user.role)) {
         return res
           .status(403)
@@ -62,6 +65,37 @@ function requireRole(...roles) {
       next(err);
     }
   };
+}
+
+/** The one message every guard gives a suspended account (spec §9). */
+function suspended(res) {
+  return res.status(403).json({
+    error: 'This account is suspended. Please contact support if you believe this is a mistake.',
+    code: 'ACCOUNT_SUSPENDED',
+  });
+}
+
+/**
+ * Spec §9: blocks a suspended account from taking ACTIONS, not from reading.
+ *
+ * A token is valid for 7 days, so blocking the login alone would still leave
+ * a week in which a suspended user could upload, save or download. This
+ * re-reads status from the database -- the token payload cannot be trusted
+ * for it, because the suspension always happened AFTER the token was issued.
+ *
+ *   router.post('/', verifyToken, requireActive, handler)
+ */
+async function requireActive(req, res, next) {
+  if (!req.user?.id) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const user = await User.findById(req.user.id).select('status').lean();
+    if (!user) return res.status(401).json({ error: 'Account no longer exists' });
+    if (user.status === 'suspended') return suspended(res);
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 /**
@@ -89,3 +123,4 @@ function optionalAuth(req, res, next) {
 module.exports = verifyToken;
 module.exports.requireRole = requireRole;
 module.exports.optionalAuth = optionalAuth;
+module.exports.requireActive = requireActive;

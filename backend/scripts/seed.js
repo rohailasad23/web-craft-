@@ -23,6 +23,9 @@ const User = require('../models/User');
 const Template = require('../models/Template');
 const Download = require('../models/Download');
 const Favorite = require('../models/Favorite');
+const Report = require('../models/Report');
+const Notification = require('../models/Notification');
+const AuditLog = require('../models/AuditLog');
 const { makeThumbnail } = require('../services/placeholders');
 const storage = require('../services/storage');
 
@@ -42,6 +45,20 @@ const SEED_BROWSERS = {
   bio: 'Just here to grab a few templates.',
 };
 
+/**
+ * Spec §8 ships a moderation console that deliberately has NO HTTP path to
+ * grant admin -- so without a seeded account there would be no way to ever see
+ * it. This is that account, and it exists only as long as you run `npm run
+ * seed`; nothing in the running app creates one.
+ */
+const SEED_ADMIN = {
+  name: 'Sam Admin',
+  email: 'admin@example.com',
+  passwordHash: 'seed-admin-1234',
+  role: 'admin',
+  bio: 'Keeps the catalogue clean.',
+};
+
 /** title, category, technologies, blurb, tags */
 const SEED_TEMPLATES = [
   ['Nordic Portfolio', 'Portfolio', ['HTML/CSS', 'JavaScript'], 'A calm, editorial portfolio with large type, generous whitespace and a dark-mode toggle. Ships with project, about and contact views.', ['minimal', 'dark mode', 'portfolio']],
@@ -57,6 +74,35 @@ const SEED_TEMPLATES = [
   ['Craft Commerce', 'E-commerce', ['HTML/CSS', 'JavaScript'], 'A product landing page for a single-item shop: gallery, size selector, reviews and an add-to-cart micro-interaction.', ['landing', 'ecommerce', 'micro-interactions']],
   ['Resume One', 'Portfolio', ['HTML/CSS'], 'A single-page resume template that prints cleanly to A4, with skills, timeline and a downloadable PDF stylesheet.', ['one page', 'print', 'portfolio']],
 ];
+
+/**
+ * Spec §5 / §6 / §32: release metadata for a few of the seeded templates, so
+ * the details page can be reviewed against real version, licence and changelog
+ * data. The rest are submitted without a licence on purpose -- §32 requires an
+ * unspecified licence to read as "License not specified." rather than quietly
+ * defaulting to a real one.
+ *
+ * `daysAgo` is converted to a real date below so the changelog has a believable
+ * spread instead of every entry stamped with the moment you ran the seed.
+ */
+const SEED_RELEASES = {
+  'Nordic Portfolio': {
+    version: '2.1.0',
+    license: 'MIT',
+    changelog: [
+      { version: '2.1.0', notes: ['Added a print stylesheet for the resume view', 'Cut the hero image by about 60%'], daysAgo: 6 },
+      { version: '2.0.0', notes: ['Rebuilt the navigation as a sticky rail', 'Switched to system fonts'], daysAgo: 24 },
+    ],
+  },
+  'Aurora Store': {
+    version: '1.4.2',
+    license: 'Apache 2.0',
+    changelog: [
+      { version: '1.4.2', notes: ['Fixed the filter drawer on iOS Safari', 'Cart totals now round correctly'], daysAgo: 3 },
+    ],
+  },
+  'Pulse Dashboard': { version: '0.9.0', license: '', changelog: [] },
+};
 
 /** Write an SVG thumbnail to disk and return its public URL. */
 function writeThumbnail(title, category) {
@@ -183,19 +229,32 @@ async function seed() {
 
   // Start from a known state so re-running never doubles the data. Favorites
   // go too: every template below is about to be recreated with a new id, and
-  // leaving rows behind would orphan them.
-  await Promise.all([Template.deleteMany({}), Download.deleteMany({}), Favorite.deleteMany({})]);
-  await User.deleteMany({ email: { $in: [SEED_USER.email, SEED_BROWSERS.email] } });
+  // leaving rows behind would orphan them. Reports, notifications and audit
+  // entries all reference the ids being thrown away, so they go with them.
+  await Promise.all([
+    Template.deleteMany({}),
+    Download.deleteMany({}),
+    Favorite.deleteMany({}),
+    Report.deleteMany({}),
+    Notification.deleteMany({}),
+    AuditLog.deleteMany({}),
+  ]);
+  await User.deleteMany({
+    email: { $in: [SEED_USER.email, SEED_BROWSERS.email, SEED_ADMIN.email] },
+  });
 
   const dev = await User.create(SEED_USER);
   const browser = await User.create(SEED_BROWSERS);
+  const admin = await User.create(SEED_ADMIN);
   console.log(`👤 Developer: ${SEED_USER.email}  (password: ${SEED_USER.passwordHash})`);
   console.log(`👤 User:      ${SEED_BROWSERS.email}  (password: ${SEED_BROWSERS.passwordHash})`);
+  console.log(`👤 Admin:     ${SEED_ADMIN.email}  (password: ${SEED_ADMIN.passwordHash})`);
 
   const docs = [];
   for (const [title, category, technologies, description, tags] of SEED_TEMPLATES) {
     const slug = Template.slugify(title);
     const archive = writeArchive(slug, title);
+    const release = SEED_RELEASES[title] || { version: '1.0.0', license: '', changelog: [] };
     docs.push({
       title,
       slug,
@@ -207,11 +266,21 @@ async function seed() {
       screenshots: [],
       previewUrl: 'https://example.com',
       githubUrl: 'https://github.com/rohailasad23/web-craft-',
+      version: release.version,
+      license: release.license,
+      changelog: release.changelog.map((entry) => ({
+        version: entry.version,
+        notes: entry.notes,
+        createdAt: new Date(Date.now() - entry.daysAgo * 864e5),
+      })),
       file: { key: archive.key, filename: archive.filename, size: archive.size, contentType: 'application/zip' },
       author: dev._id,
       authorName: dev.name,
       downloadCount: 0,
-      status: 'approved',
+      // One submission is deliberately left awaiting review so /admin opens
+      // onto a real queue rather than a well-designed empty state. Everything
+      // else is live, which is also why this one is not in `featured` below.
+      status: title === 'Resume One' ? 'pending' : 'approved',
       featured: ['Nordic Portfolio', 'Studio Agency', 'Aurora Store', 'Pulse Dashboard'].includes(title),
       createdAt: new Date(Date.now() - Math.random() * 30 * 864e5),
     });
@@ -228,9 +297,24 @@ async function seed() {
   }
   console.log(`⬇️  ${picks.length} sample downloads recorded`);
 
+  // Spec §7: one open report, so the admin queue is not empty on a fresh
+  // install and the whole report lifecycle can be walked through.
+  const reported = created.find((t) => t.title === 'Studio Agency');
+  if (reported) {
+    await Report.create({
+      userId: browser._id,
+      templateId: reported._id,
+      reason: 'Broken demo',
+      description:
+        'The live preview loads a blank page for me on Chrome -- the hero image never appears.',
+    });
+    console.log('⚑  1 sample report waiting in the admin queue');
+  }
+
   console.log('\n✅ Seed complete');
   console.log(`   Categories: ${CATEGORIES.join(', ')}`);
   console.log(`   Technologies: ${TECHNOLOGIES.join(', ')}`);
+  console.log('   Admin queue: 1 template pending review, 1 report open');
 }
 
 seed()
