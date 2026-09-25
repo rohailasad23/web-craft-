@@ -59,106 +59,108 @@ export default function Login({ onAuth }) {
     }
   };
 
+  /* Viewport-fit shell: the sticky navbar owns --nav-h, so this column is
+     exactly the window that is left and the document never exceeds 100dvh --
+     no scrollbar, no overlap, identical composition on every screen size.
+     `min-h-full` (rather than justify-center on the scroller itself) keeps a
+     taller-than-expected card fully reachable if a very short window ever has
+     to fall back to this container's own scrollbar. */
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md flex-col justify-center px-5 py-14 sm:px-6">
-      <div className="animate-fade-up">
-        <Link to="/" className="mb-8 flex w-fit items-center gap-2.5">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-lg shadow-soft">
-            🧩
-          </span>
-          <span className="text-xl font-extrabold tracking-tight text-ink-900">web craft</span>
-        </Link>
-
-        <span className="ui-eyebrow">Welcome back</span>
-        <h1 className="ui-title mt-2 text-3xl">Sign in to your account</h1>
-        <p className="mt-2 text-sm leading-relaxed text-ink-500">
-          Download templates you have saved, manage your submissions, and pick up where you left off.
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} className="ui-card mt-8 space-y-5 p-6 animate-fade-up [animation-delay:.08s]" noValidate>
-        {error && (
-          <div className="ui-alert ui-alert--error" role="alert">
-            {error}
-          </div>
-        )}
-
-        <div>
-          <label htmlFor="email" className="ui-label">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            value={form.email}
-            onChange={update('email')}
-            placeholder="you@example.com"
-            className="ui-input"
-            autoComplete="email"
-            autoFocus
-            required
-          />
+    <div className="h-[calc(100dvh_-_var(--nav-h))] overflow-y-auto overscroll-contain px-5 py-3 sm:px-6">
+      <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center">
+        <div className="animate-fade-up">
+          <h1 className="ui-title text-2xl sm:text-3xl">Sign in to your account</h1>
+          {/* The error takes the subtitle's place, so an invalid submit never
+              grows the page past the viewport. */}
+          {error ? (
+            <div className="ui-alert ui-alert--error mt-2 !px-3.5 !py-2 text-xs" role="alert">
+              {error}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm leading-relaxed text-ink-500">
+              Welcome back — pick up where you left off.
+            </p>
+          )}
         </div>
 
-        <div>
-          <label htmlFor="password" className="ui-label">
-            Password
-          </label>
-          <div className="relative">
+        <form onSubmit={handleSubmit} className="ui-card mt-4 space-y-3 p-5 animate-fade-up [animation-delay:.08s]" noValidate>
+          <div>
+            <label htmlFor="email" className="ui-label">
+              Email
+            </label>
             <input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              value={form.password}
-              onChange={update('password')}
-              placeholder="••••••••"
-              className="ui-input !pr-16"
-              autoComplete="current-password"
+              id="email"
+              type="email"
+              value={form.email}
+              onChange={update('email')}
+              placeholder="you@example.com"
+              className="ui-input"
+              autoComplete="email"
+              autoFocus
               required
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs font-semibold text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-700"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? 'Hide' : 'Show'}
-            </button>
           </div>
-        </div>
 
-        {/* The label crossfades instead of snapping (anim guide §17). */}
-        <button
-          type="submit"
-          disabled={loading}
-          className={`ui-btn ui-btn--block ui-btn--lg ${
-            done ? 'ui-btn--success' : 'ui-btn--primary'
-          }`}
-        >
-          <span
-            key={done ? 'done' : loading ? 'loading' : 'idle'}
-            className="inline-flex animate-fade-quick items-center gap-2"
+          <div>
+            <label htmlFor="password" className="ui-label">
+              Password
+            </label>
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={update('password')}
+                placeholder="••••••••"
+                className="ui-input !pr-16"
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-xs font-semibold text-ink-500 transition-colors hover:bg-ink-100 hover:text-ink-700"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </div>
+
+          {/* The label crossfades instead of snapping (anim guide §17). */}
+          <button
+            type="submit"
+            disabled={loading}
+            className={`ui-btn ui-btn--block ${
+              done ? 'ui-btn--success' : 'ui-btn--primary'
+            }`}
           >
-            {loading ? (
-              <>
-                <span className="ui-spinner" aria-hidden /> Signing in…
-              </>
-            ) : done ? (
-              <>
-                <span aria-hidden>✓</span> Signed in
-              </>
-            ) : (
-              'Sign in'
-            )}
-          </span>
-        </button>
-      </form>
+            <span
+              key={done ? 'done' : loading ? 'loading' : 'idle'}
+              className="inline-flex animate-fade-quick items-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <span className="ui-spinner" aria-hidden /> Signing in…
+                </>
+              ) : done ? (
+                <>
+                  <span aria-hidden>✓</span> Signed in
+                </>
+              ) : (
+                'Sign in'
+              )}
+            </span>
+          </button>
+        </form>
 
-      <p className="mt-6 text-center text-sm text-ink-500 animate-fade-in">
-        New here?{' '}
-        <Link to="/register" className="font-semibold text-brand-700 hover:underline">
-          Create an account
-        </Link>
-      </p>
+        <p className="mt-4 text-center text-sm text-ink-500 animate-fade-in">
+          New here?{' '}
+          <Link to="/register" className="font-semibold text-brand-700 hover:underline">
+            Create an account
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }

@@ -60,6 +60,15 @@
   --animate-wiggle: wiggle 0.5s var(--ease-spring);
 }
 
+/* Live height of the sticky navbar. <Navbar /> keeps this in sync with a
+   ResizeObserver, and viewport-fit screens (login/register) size themselves
+   to `100dvh - var(--nav-h)` so the document never grows a scrollbar or
+   slides underneath the nav. The literal below is only the first-paint
+   fallback before the nav measures itself. */
+:root {
+  --nav-h: 71px;
+}
+
 /* `backwards` instead of `both` is deliberate. A filled animation's `to`
    frame wins over normal declarations (CSS cascade rank: animations beat
    author rules), so a card kept inside a `.stagger` grid would be stuck on

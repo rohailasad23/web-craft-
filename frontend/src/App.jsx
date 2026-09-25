@@ -75,7 +75,15 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
 
   return (
     <SessionContext.Provider value={contextValue}>
-      <div className="flex min-h-screen flex-col bg-ink-50 font-sans text-ink-900 antialiased">
+      {/* `min-h-dvh` rather than `min-h-screen`: on mobile 100vh covers the
+          area hidden behind the browser chrome, so a viewport-fit page such as
+          login would sit below the fold and force a scrollbar.
+          `overflow-clip` (not `hidden`) keeps the route-reveal transform from
+          adding a few pixels of scrollable overflow for the ~300ms it runs --
+          on the auth pages, which are exactly one screen tall, that would flash
+          a scrollbar and shove the centred card sideways. It is not a scroll
+          container, so the sticky navbar and sticky page rails still work. */}
+      <div className="flex min-h-dvh flex-col overflow-clip bg-ink-50 font-sans text-ink-900 antialiased">
         <Navbar />
         {/* Keyed on the path so every navigation replays a single, fast
             reveal (anim guide §11). Query-only changes -- filters,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../../lib/session';
 import { initials } from '../../lib/format';
@@ -36,6 +36,24 @@ export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const navRef = useRef(null);
+
+  // Publish the nav's real height as --nav-h. Viewport-fit screens (the auth
+  // forms) subtract it from 100dvh, so anything that changes it -- a wider
+  // label set, text zoom, the mobile drawer opening -- is picked up instead
+  // of leaving the page a few pixels too tall (a scrollbar) or too short
+  // (content sliding under the nav).
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const sync = () => {
+      document.documentElement.style.setProperty('--nav-h', `${el.offsetHeight}px`);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => {
@@ -94,7 +112,10 @@ export default function Navbar() {
   );
 
   return (
-    <nav className="sticky top-0 z-40 animate-slide-down border-b border-ink-100 bg-white/85 backdrop-blur-md supports-[backdrop-filter]:bg-white/70">
+    <nav
+      ref={navRef}
+      className="sticky top-0 z-40 animate-slide-down border-b border-ink-100 bg-white/85 backdrop-blur-md supports-[backdrop-filter]:bg-white/70"
+    >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5 sm:px-6">
         {brand}
 
