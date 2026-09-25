@@ -9,6 +9,8 @@ import Footer from '../../components/Common/Footer';
 const MAX_ZIP = 25 * 1024 * 1024;
 const MAX_IMAGE = 5 * 1024 * 1024;
 const MAX_SHOTS = 5;
+// Mirrors MAX_TAGS on the server (spec §2).
+const MAX_TAGS = 8;
 
 /**
  * /developer/upload  and  /developer/upload/:id
@@ -30,6 +32,7 @@ export default function UploadTemplate() {
     description: '',
     category: '',
     technologies: [],
+    tags: [],
     previewUrl: '',
     githubUrl: '',
   });
@@ -39,6 +42,7 @@ export default function UploadTemplate() {
   const [screenshots, setScreenshots] = useState([]);
   const [existingShots, setExistingShots] = useState([]);
   const [customTech, setCustomTech] = useState('');
+  const [tagDraft, setTagDraft] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
   const [error, setError] = useState('');
@@ -62,6 +66,7 @@ export default function UploadTemplate() {
           description: found.description || '',
           category: found.category || '',
           technologies: found.technologies || [],
+          tags: found.tags || [],
           previewUrl: found.previewUrl || '',
           githubUrl: found.githubUrl || '',
         });
@@ -97,6 +102,34 @@ export default function UploadTemplate() {
     }
     setCustomTech('');
   };
+
+  // Spec §2: tags are typed rather than picked, because the list is whatever
+  // developers have written -- there is no fixed set to render buttons for.
+  // Commas split, so "one page, dark mode" lands as two tags in one keystroke.
+  const addTag = () => {
+    const parts = tagDraft
+      .split(',')
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+    if (!parts.length) return;
+
+    // Worked out before the update so anything the cap refuses to take can be
+    // handed straight back: emptying the box would quietly eat those tags.
+    const next = [...form.tags];
+    const rejected = [];
+    parts.forEach((part) => {
+      const value = part.slice(0, 30);
+      if (next.includes(value)) return;
+      if (next.length >= MAX_TAGS) rejected.push(value);
+      else next.push(value);
+    });
+
+    setForm((f) => ({ ...f, tags: next }));
+    setTagDraft(rejected.join(', '));
+  };
+
+  const removeTag = (tag) =>
+    setForm((f) => ({ ...f, tags: f.tags.filter((t) => t !== tag) }));
 
   const errors = useMemo(() => {
     const out = {};
@@ -151,6 +184,7 @@ export default function UploadTemplate() {
       body.set('description', form.description.trim());
       body.set('category', form.category);
       body.set('technologies', JSON.stringify(form.technologies));
+      body.set('tags', JSON.stringify(form.tags));
       body.set('previewUrl', form.previewUrl.trim());
       body.set('githubUrl', form.githubUrl.trim());
 
@@ -336,6 +370,66 @@ export default function UploadTemplate() {
             )}
 
             {errors.technologies && <FieldError message={errors.technologies} />}
+          </section>
+
+          {/* ------------------------------------------------------ tags */}
+          <section className="ui-card space-y-4 p-6">
+            <div>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-base font-bold text-ink-900">Tags</h2>
+                {/* Live count, so the 8-tag cap is never a surprise (spec §2). */}
+                <span
+                  className={`text-xs font-semibold tabular-nums ${
+                    form.tags.length >= MAX_TAGS ? 'text-red-600' : 'text-ink-500'
+                  }`}
+                  aria-live="polite"
+                >
+                  {form.tags.length}/{MAX_TAGS}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-ink-500">
+                Optional keywords describing what the template is like — “one page”, “dark mode”,
+                “animated”. They feed search and the tag filter. Up to 8.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={tagDraft}
+                onChange={(e) => setTagDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addTag();
+                  }
+                }}
+                maxLength={64}
+                placeholder="one page, dark mode, animated"
+                aria-label="Add tags"
+                className="ui-input"
+              />
+              <button type="button" onClick={addTag} className="ui-btn ui-btn--soft shrink-0">
+                Add
+              </button>
+            </div>
+
+            {form.tags.length > 0 && (
+              <ul className="flex flex-wrap gap-2">
+                {form.tags.map((tag) => (
+                  <li key={tag}>
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      aria-label={`Remove tag ${tag}`}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                    >
+                      #{tag} <span aria-hidden>×</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           {/* ---------------------------------------------------- files */}

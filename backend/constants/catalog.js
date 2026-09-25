@@ -37,7 +37,9 @@ const CATEGORIES = [
   'Other',
 ];
 
-const SORTS = ['newest', 'popular', 'downloads', 'az'];
+/* Spec §3: Latest, Most Downloaded, Most Popular, Recently Updated, A-Z.
+   `popular` orders by a blended score, `downloads` by raw count. */
+const SORTS = ['newest', 'popular', 'downloads', 'updated', 'az'];
 
 const FILTERS = ['All', ...TECHNOLOGIES, ...CATEGORIES];
 

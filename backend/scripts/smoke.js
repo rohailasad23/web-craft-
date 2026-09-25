@@ -16,6 +16,7 @@
  */
 
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.SMOKE_PORT || 8099;
@@ -94,8 +95,29 @@ async function waitHealthy(timeoutMs = 180000) {
   throw new Error(`API never became healthy (${last})`);
 }
 
+/**
+ * Reset the throwaway data directory before booting.
+ *
+ * `.data/mongo-smoke` is only ever written by this script, and the instance it
+ * feeds is killed on exit -- but a run that is hard-killed (Ctrl+C during the
+ * download, an OOM, a lost shell) still leaves its fixtures behind, and the
+ * next run would then fail on "listing is empty again" for a reason that has
+ * nothing to do with the code under test. Wiping on start makes every run
+ * start from the same state.
+ */
+function resetSmokeDb() {
+  try {
+    fs.rmSync(path.join(ROOT, '.data', 'mongo-smoke'), { recursive: true, force: true });
+  } catch (e) {
+    // A mongod left over from a crashed run can hold the directory open on
+    // Windows. Warn and continue rather than blocking the test entirely.
+    console.warn(`⚠️  Could not reset the smoke database (${e.code || e.message})`);
+  }
+}
+
 function startServer() {
   console.log(`⏳ Starting API on :${PORT} (isolated database)…`);
+  resetSmokeDb();
   child = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
     env: {
@@ -275,6 +297,8 @@ async function run() {
     form.set('description', 'A portfolio template created by the smoke test to prove the full upload path works.');
     form.set('category', 'Portfolio');
     form.set('technologies', JSON.stringify(['React', 'Tailwind CSS']));
+    // Spec §2: free-form tags, lowercased and de-duped by the API.
+    form.set('tags', 'One-Page, Minimal, one-page');
     form.set('previewUrl', 'https://example.com/demo');
     form.set('githubUrl', 'https://github.com/example/smoke');
     form.set('file', new Blob([ZIP], { type: 'application/zip' }), 'smoke.zip');
@@ -293,6 +317,11 @@ async function run() {
       check('screenshots saved', (templateA.screenshots || []).length === 2);
       check('archive stored as a key reference', typeof templateA.file?.key === 'string');
       check('technologies kept as given (free-form allowed)', templateA.technologies.includes('Tailwind CSS'));
+      check(
+        'tags are lowercased and de-duped (§2)',
+        JSON.stringify(templateA.tags) === JSON.stringify(['one-page', 'minimal']),
+        JSON.stringify(templateA.tags)
+      );
       check('status auto-approved for V1', templateA.status === 'approved');
       check('downloadCount starts at zero', templateA.downloadCount === 0);
     }
@@ -365,28 +394,48 @@ async function run() {
   {
     const { res, data } = await req('GET', '/api/templates');
     check('GET /api/templates -> 200', res.ok);
-    check('listing envelope has templates/total/page/pages', ['templates', 'total', 'page', 'pages'].every((k) => k in data));
-    check('both fixture templates are listed', data.total === 2, `got ${data.total}`);
+    check(
+      'listing envelope carries the spec §4 pagination fields',
+      ['templates', 'currentPage', 'totalPages', 'totalTemplates', 'hasNextPage', 'hasPreviousPage'].every((k) => k in data),
+      Object.keys(data).join(',')
+    );
+    check('both fixture templates are listed', data.totalTemplates === 2, `got ${data.totalTemplates}`);
     check('only approved templates are public', data.templates.every((t) => t.status === 'approved'));
+    check('anonymous visitor sees favourited=false', data.templates.every((t) => t.favorited === false));
 
     const paged = await req('GET', '/api/templates?limit=1');
-    check('pagination honours limit', paged.data.templates.length === 1 && paged.data.total === 2);
-    check('hasMore is reported', paged.data.hasMore === true);
+    check('pagination honours limit', paged.data.templates.length === 1 && paged.data.totalTemplates === 2);
+    check(
+      'hasNextPage / hasPreviousPage are honest',
+      paged.data.hasNextPage === true && paged.data.hasPreviousPage === false
+    );
 
     const q = await req('GET', '/api/templates?q=' + encodeURIComponent(`Smoke Alpha`));
-    check('search by title works', q.res.ok && q.data.total >= 1, `got ${q.data.total}`);
+    check('search by title works', q.res.ok && q.data.totalTemplates >= 1, `got ${q.data.totalTemplates}`);
 
     const qTech = await req('GET', '/api/templates?q=next');
-    check('search is case-insensitive', qTech.res.ok && qTech.data.total >= 1, `got ${qTech.data.total}`);
+    check('search is case-insensitive', qTech.res.ok && qTech.data.totalTemplates >= 1, `got ${qTech.data.totalTemplates}`);
+
+    const qTag = await req('GET', '/api/templates?q=minimal');
+    check('search matches a tag (§2)', qTag.res.ok && qTag.data.totalTemplates === 1, `got ${qTag.data.totalTemplates}`);
 
     const filter = await req('GET', '/api/templates?filter=Portfolio');
-    check('filter=Portfolio matches the category field', filter.res.ok && filter.data.total === 1, `got ${filter.data.total}`);
+    check('filter=Portfolio matches the category field', filter.res.ok && filter.data.totalTemplates === 1, `got ${filter.data.totalTemplates}`);
 
     const tech = await req('GET', '/api/templates?filter=React');
-    check('filter=React matches the technology field', tech.res.ok && tech.data.total === 1, `got ${tech.data.total}`);
+    check('filter=React matches the technology field', tech.res.ok && tech.data.totalTemplates === 1, `got ${tech.data.totalTemplates}`);
+
+    const tag = await req('GET', '/api/templates?filter=minimal');
+    check('filter=one tag matches the tags field (§2)', tag.res.ok && tag.data.totalTemplates === 1, `got ${tag.data.totalTemplates}`);
 
     const all = await req('GET', '/api/templates?filter=All');
-    check('filter=All returns everything', all.res.ok && all.data.total === 2, `got ${all.data.total}`);
+    check('filter=All returns everything', all.res.ok && all.data.totalTemplates === 2, `got ${all.data.totalTemplates}`);
+
+    const upd = await req('GET', '/api/templates?sort=updated');
+    check('sort=recently updated -> 200 with everything', upd.res.ok && upd.data.totalTemplates === 2, `got ${upd.res.status}`);
+
+    const meta = await req('GET', '/api/meta');
+    check('meta exposes database-driven tags (§2)', meta.res.ok && Array.isArray(meta.data.tags) && meta.data.tags.includes('minimal'), JSON.stringify(meta.data.tags));
 
     const az = await req('GET', '/api/templates?sort=az');
     const titles = az.data.templates.map((t) => t.title);
@@ -561,6 +610,120 @@ async function run() {
     check('empty profile update -> 400', empty.res.status === 400);
   }
 
+  /* ----------------------------------------------------------- saved (§1) */
+  section('Saved templates');
+  {
+    const anon = await req('POST', `/api/templates/${templateA._id}/favorite`);
+    check(
+      'anonymous save -> 401 with a useful message',
+      anon.res.status === 401 && /log in/i.test(anon.data.error || ''),
+      `got ${anon.res.status} ${anon.data.error}`
+    );
+
+    const first = await req('POST', `/api/templates/${templateA._id}/favorite`, { token: userToken });
+    check('saving a template -> 200', first.res.ok && first.data.favorited === true, JSON.stringify(first.data));
+    check('save reports the new total', first.data.favorites === 1, `got ${first.data.favorites}`);
+
+    const again = await req('POST', `/api/templates/${templateA._id}/favorite`, { token: userToken });
+    check('saving twice does not duplicate (§1)', again.res.ok && again.data.favorites === 1, `got ${again.data.favorites}`);
+
+    const list = await req('GET', '/api/users/me/favorites', { token: userToken });
+    check(
+      'GET /api/users/me/favorites lists it',
+      list.res.ok && list.data.total === 1 && list.data.templates.length === 1,
+      JSON.stringify(list.data).slice(0, 160)
+    );
+    check('saved row carries favourited=true', list.data.templates[0]?.favorited === true);
+
+    const theirs = await req('GET', '/api/users/me/favorites', { token: otherToken });
+    check('the saved list is scoped to its owner', theirs.res.ok && theirs.data.total === 0, `got ${theirs.data.total}`);
+
+    const marked = await req('GET', `/api/templates/${templateA.slug}`, { token: userToken });
+    check('details reflect the saved state', marked.data.template?.favorited === true);
+    check(
+      'favoriteCount incremented exactly once (§1)',
+      marked.data.template?.favoriteCount === 1,
+      `got ${marked.data.template?.favoriteCount}`
+    );
+
+    const anonDetails = await req('GET', `/api/templates/${templateA.slug}`);
+    check('anonymous details are not marked favourited', anonDetails.data.template?.favorited === false);
+
+    const off = await req('DELETE', `/api/templates/${templateA._id}/favorite`, { token: userToken });
+    check('unsaving -> favourited false, total 0', off.res.ok && off.data.favorited === false && off.data.favorites === 0);
+
+    const offAgain = await req('DELETE', `/api/templates/${templateA._id}/favorite`, { token: userToken });
+    check('unsaving twice is not an error', offAgain.res.ok && offAgain.data.favorites === 0);
+
+    const unknown = await req('DELETE', '/api/templates/aaaaaaaaaaaaaaaaaaaaaaaa/favorite', { token: userToken });
+    check('unsave an unknown template -> 404', unknown.res.status === 404, `got ${unknown.res.status}`);
+
+    const afterOff = await req('GET', `/api/templates/${templateA.slug}`);
+    check(
+      'favoriteCount decrements back to zero',
+      afterOff.data.template?.favoriteCount === 0,
+      `got ${afterOff.data.template?.favoriteCount}`
+    );
+
+    const after = await req('GET', '/api/users/me/favorites', { token: userToken });
+    check('saved list is empty again', after.data.total === 0, `got ${after.data.total}`);
+  }
+
+  /* -------------------------------------------------- change password (§11) */
+  section('Change password');
+  {
+    const NEW_PASS = `smoke-changed-${STAMP}`;
+
+    const noCurrent = await req('POST', '/api/auth/change-password', {
+      token: userToken,
+      body: { newPassword: NEW_PASS },
+    });
+    check('current password is required', noCurrent.res.status === 400, `got ${noCurrent.res.status}`);
+
+    const wrong = await req('POST', '/api/auth/change-password', {
+      token: userToken,
+      body: { currentPassword: 'definitely-not-it', newPassword: NEW_PASS },
+    });
+    // 400, not 401: the session is perfectly good, only the field was wrong.
+    // A 401 here reads as "expired session" to the browser and would tear the
+    // session down mid-form (spec §11).
+    check('wrong current password -> 400', wrong.res.status === 400, `got ${wrong.res.status}`);
+
+    const stillMe = await req('GET', '/api/auth/me', { token: userToken });
+    check(
+      'a rejected password change leaves the session intact',
+      stillMe.res.status === 200,
+      `got ${stillMe.res.status}`
+    );
+
+    const short = await req('POST', '/api/auth/change-password', {
+      token: userToken,
+      body: { currentPassword: 'secret123', newPassword: 'abc' },
+    });
+    check('short new password -> 400', short.res.status === 400, `got ${short.res.status}`);
+
+    const anon = await req('POST', '/api/auth/change-password', {
+      body: { currentPassword: 'secret123', newPassword: NEW_PASS },
+    });
+    check('anonymous change-password -> 401', anon.res.status === 401);
+
+    const ok = await req('POST', '/api/auth/change-password', {
+      token: userToken,
+      body: { currentPassword: 'secret123', newPassword: NEW_PASS },
+    });
+    check('password change succeeds', ok.res.ok, JSON.stringify(ok.data));
+
+    const oldLogin = await req('POST', '/api/auth/login', {
+      body: { email: userEmail, password: 'secret123' },
+    });
+    check('old password no longer works', oldLogin.res.status === 401, `got ${oldLogin.res.status}`);
+
+    const newLogin = await req('POST', '/api/auth/login', {
+      body: { email: userEmail, password: NEW_PASS },
+    });
+    check('new password works', newLogin.res.ok, JSON.stringify(newLogin.data).slice(0, 120));
+  }
+
   /* --------------------------------------------------------------- health */
   section('Health + errors');
   {
@@ -585,7 +748,13 @@ async function run() {
     const b = await req('DELETE', `/api/templates/${templateB._id}`, { token: otherToken });
     check('second developer deletes their own template', b.res.ok);
     const empty = await req('GET', '/api/templates');
-    check('listing is empty again', empty.data.total === 0, `got ${empty.data.total}`);
+    check(
+      'listing is empty again',
+      empty.data.totalTemplates === 0,
+      `got ${empty.data.totalTemplates}: ${(empty.data.templates || [])
+        .map((t) => t.slug)
+        .join(', ')}`
+    );
   }
 
   section('Summary');

@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
+import { useFavorite } from '../lib/favorites';
 import { downloadTemplate } from '../lib/download';
 import { useToast } from '../components/Common/Toast';
+import ShareButton from '../components/Common/ShareButton';
 import { formatBytes, formatDate, formatCount, initials, mediaUrl } from '../lib/format';
 import Footer from '../components/Common/Footer';
 
@@ -18,6 +20,8 @@ export default function TemplateDetails() {
   const toast = useToast();
 
   const [template, setTemplate] = useState(null);
+  // Spec §1: save control + spec §16/§30 share sit on this page too.
+  const { saved: favorited, toggle: toggleFavorite } = useFavorite(template);
   const [author, setAuthor] = useState(null);
   const [canEdit, setCanEdit] = useState(false);
   const [status, setStatus] = useState('loading');
@@ -261,10 +265,38 @@ export default function TemplateDetails() {
                 </ul>
               </section>
             )}
+            {template.tags?.length > 0 && (
+              <section className="mt-7" aria-labelledby="tags-heading">
+                <h2 id="tags-heading" className="ui-title text-xl">
+                  Tags
+                </h2>
+                <ul className="stagger mt-3 flex flex-wrap gap-2">
+                  {template.tags.map((tag) => (
+                    <li key={tag}>
+                      {/* Tags are a filter value, not a search term: they link
+                          straight to ?filter=<tag>, which the catalogue
+                          matches against the tags field (spec §2). */}
+                      <Link
+                        to={`/templates?filter=${encodeURIComponent(tag)}`}
+                        className="inline-block rounded-lg border border-dashed border-ink-200 bg-white px-3 py-1.5 text-sm font-semibold text-ink-500 transition-colors hover:border-brand-300 hover:text-brand-700"
+                      >
+                        #{tag}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </section>
 
           {/* ------------------------------------------------- sidebar */}
-          <aside className="lg:sticky lg:top-24 lg:self-start">
+          {/* `min-w-0` matters: the sidebar holds single-line `truncate` text,
+              so its min-content width is ~800px. As a grid item with the
+              default `min-width:auto` it would drag the whole track with it --
+              widening the page below `lg` and starving the article column to
+              ~200px at desktop. Letting it shrink is what makes the ellipsis
+              inside actually do its job. */}
+          <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
             <div className="ui-card p-6 animate-fade-up">
               <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-ink-900">
                 {template.title}
@@ -280,6 +312,7 @@ export default function TemplateDetails() {
                   </Link>
                 </Meta>
                 <Meta label="Downloads">{formatCount(template.downloadCount)}</Meta>
+                <Meta label="Saves">{formatCount(template.favoriteCount || 0)}</Meta>
                 <Meta label="Added">{formatDate(template.createdAt)}</Meta>
                 <Meta label="Size">
                   {template.file?.size ? formatBytes(template.file.size) : '—'}
@@ -355,6 +388,27 @@ export default function TemplateDetails() {
                     </Link>
                   </p>
                 )}
+
+                {/* Spec §1 and §30: saving and sharing are peers, so they share
+                    one row instead of stretching the button stack further. */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={toggleFavorite}
+                    aria-pressed={favorited}
+                    className={`ui-btn !px-2 ${favorited ? 'ui-btn--saved' : 'ui-btn--soft'}`}
+                  >
+                    <span
+                      key={String(favorited)}
+                      className="inline-flex animate-fade-quick items-center gap-2"
+                    >
+                      <span aria-hidden>{favorited ? '♥' : '♡'}</span>
+                      {favorited ? 'Saved' : 'Save'}
+                    </span>
+                  </button>
+
+                  <ShareButton title={template.title} className="ui-btn ui-btn--soft !px-2" />
+                </div>
 
                 {template.previewUrl && (
                   <a

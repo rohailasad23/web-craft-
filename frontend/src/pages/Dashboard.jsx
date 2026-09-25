@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
+import { dropSaved } from '../lib/favorites';
 import { formatDate, formatCount, initials, mediaUrl } from '../lib/format';
-import { RowSkeleton, StatSkeleton } from '../components/Common/Skeletons';
+import { RowSkeleton, StatSkeleton, TemplateGridSkeleton } from '../components/Common/Skeletons';
+import TemplateCard from '../components/Templates/TemplateCard';
 import Footer from '../components/Common/Footer';
 
 /**
@@ -13,6 +15,7 @@ import Footer from '../components/Common/Footer';
 export default function Dashboard() {
   const { user, refresh } = useSession();
   const [downloads, setDownloads] = useState(null);
+  const [favorites, setFavorites] = useState(null);
   const [templates, setTemplates] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -26,11 +29,13 @@ export default function Dashboard() {
 
     Promise.all([
       api.get('/api/users/me/downloads'),
+      api.get('/api/users/me/favorites'),
       isDeveloper ? api.get('/api/templates/mine') : Promise.resolve({ data: { templates: [] } }),
     ])
-      .then(([dl, mine]) => {
+      .then(([dl, fav, mine]) => {
         if (!alive) return;
         setDownloads(dl.data);
+        setFavorites(fav.data);
         setTemplates(mine.data.templates);
       })
       .catch((err) => alive && setError(getErrorMessage(err, 'Could not load your dashboard')))
@@ -51,6 +56,10 @@ export default function Dashboard() {
   };
 
   const recent = downloads?.downloads?.slice(0, 6) || [];
+  // Spec §1: the saved list has to be reachable from the dashboard. Four
+  // cards, not a second row component -- the same card, heart and all, that
+  // the catalogue uses.
+  const recentSaved = (favorites?.templates || []).slice(0, 4);
 
   return (
     <div className="flex min-h-[70vh] flex-col">
@@ -214,6 +223,55 @@ export default function Dashboard() {
                   </li>
                 ))}
               </ul>
+            )}
+          </div>
+        </section>
+
+        {/* ------------------------------------------------ saved templates */}
+        <section className="mt-10" aria-labelledby="saved-heading">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <span className="ui-eyebrow">Shortlist</span>
+              <h2 id="saved-heading" className="ui-title mt-2 text-2xl">
+                Saved templates
+              </h2>
+            </div>
+            <Link
+              to="/saved"
+              className="text-sm font-semibold text-brand-700 hover:text-brand-800"
+            >
+              {favorites?.total ? `All ${favorites.total} saved →` : 'All saved →'}
+            </Link>
+          </div>
+
+          <div className="mt-5">
+            {loading ? (
+              <TemplateGridSkeleton count={4} />
+            ) : recentSaved.length === 0 ? (
+              <div className="ui-card p-8 text-center">
+                <span className="text-4xl" aria-hidden>
+                  ♡
+                </span>
+                <h3 className="ui-title mt-3 text-lg">Nothing saved yet</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm text-ink-500">
+                  Tap the heart on any template to build a shortlist you can compare side by side.
+                </p>
+                <Link to="/templates" className="ui-btn ui-btn--soft mt-5 !px-5 !py-2.5">
+                  Browse templates
+                </Link>
+              </div>
+            ) : (
+              <div className="stagger grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {recentSaved.map((t) => (
+                  <TemplateCard
+                    key={t._id || t.slug}
+                    template={t}
+                    onFavoriteChange={(tpl, isSaved) => {
+                      if (!isSaved) setFavorites((d) => dropSaved(d, tpl));
+                    }}
+                  />
+                ))}
+              </div>
             )}
           </div>
         </section>

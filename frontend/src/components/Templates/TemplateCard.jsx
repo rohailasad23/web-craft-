@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { mediaUrl, formatCount } from '../../lib/format';
 import { useSession } from '../../lib/session';
+import { useFavorite } from '../../lib/favorites';
 import { downloadTemplate } from '../../lib/download';
 import { useToast } from '../Common/Toast';
 
@@ -9,10 +10,12 @@ import { useToast } from '../Common/Toast';
  * One template in a grid (spec §8): thumbnail, name, short description, category,
  * technologies, developer, download count and details / preview / download buttons.
  */
-export default function TemplateCard({ template, onDownloaded }) {
+export default function TemplateCard({ template, onDownloaded, onFavoriteChange }) {
   const { isAuthenticated } = useSession();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+  const { saved, toggle } = useFavorite(template, onFavoriteChange);
   // Download runs a small three-state cycle (anim guide §16):
   // Download -> Downloading... -> Downloaded, then it eases back to idle.
   const [phase, setPhase] = useState('idle');
@@ -30,7 +33,7 @@ export default function TemplateCard({ template, onDownloaded }) {
 
     if (!isAuthenticated) {
       toast.info('Please log in to download this template.');
-      navigate('/login');
+      navigate('/login', { state: { from: location } });
       return;
     }
 
@@ -51,7 +54,7 @@ export default function TemplateCard({ template, onDownloaded }) {
   const authorId = template.author?._id ?? template.author;
 
   return (
-    <article className="ui-card ui-card--hover group flex flex-col overflow-hidden">
+    <article className="ui-card ui-card--hover group relative flex flex-col overflow-hidden">
       <Link
         to={`/templates/${template.slug}`}
         className="relative block aspect-[16/10] overflow-hidden bg-ink-100"
@@ -67,11 +70,34 @@ export default function TemplateCard({ template, onDownloaded }) {
           {template.category}
         </span>
         {(template.downloadCount || 0) > 0 && (
-          <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-ink-900/70 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
+          <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-ink-900/70 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
             ↓ {formatCount(template.downloadCount)}
           </span>
         )}
       </Link>
+
+      {/* Spec §1: save control. It sits as a sibling of the card link, not
+          inside it -- a button nested in an anchor is invalid and would fight
+          the link for the same click. */}
+      <button
+        type="button"
+        onClick={toggle}
+        aria-pressed={saved}
+        aria-label={
+          saved
+            ? `Remove ${template.title} from saved templates`
+            : `Save ${template.title} for later`
+        }
+        className={`absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full border border-white/60 text-base shadow-soft backdrop-blur transition-all duration-300 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+          saved
+            ? 'bg-white text-rose-500'
+            : 'bg-white/85 text-ink-500 hover:text-rose-500'
+        }`}
+      >
+        <span aria-hidden className={saved ? 'animate-fade-quick' : undefined}>
+          {saved ? '♥' : '♡'}
+        </span>
+      </button>
 
       <div className="flex flex-1 flex-col p-4">
         <Link to={`/templates/${template.slug}`}>

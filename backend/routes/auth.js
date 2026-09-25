@@ -117,6 +117,50 @@ router.get('/me', verifyToken, asyncHandler(async (req, res) => {
   res.json({ success: true, user: publicUser(user) });
 }));
 
+// ===== CHANGE PASSWORD =====
+// Spec §11: the current password is required even though the caller already
+// holds a valid session -- an unlocked laptop or a stolen token must not be
+// enough to take the account over.
+router.post(
+  '/change-password',
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const current = String(req.body.currentPassword || '');
+    const next = String(req.body.newPassword || '');
+
+    if (!current || !next) {
+      return res
+        .status(400)
+        .json({ error: 'Current password and new password are required' });
+    }
+    if (next.length < 6) {
+      return res.status(400).json({ error: 'New password must be at least 6 characters' });
+    }
+    if (current === next) {
+      return res
+        .status(400)
+        .json({ error: 'New password must be different from the current one' });
+    }
+
+    const user = await User.findById(req.user.id).select('+passwordHash');
+    if (!user) return res.status(401).json({ error: 'Account no longer exists' });
+
+    if (!(await user.comparePassword(current))) {
+      // 400, not 401: the session is perfectly valid, only this field is
+      // wrong. The frontend treats a 401 as "your session has expired" and
+      // tears it down, so answering 401 here would log the person out
+      // mid-form and bury the one message they need to see.
+      return res.status(400).json({ error: 'Your current password is incorrect' });
+    }
+
+    // The schema's pre('save') hook re-hashes because passwordHash changed.
+    user.passwordHash = next;
+    await user.save();
+
+    res.json({ success: true, message: 'Password updated' });
+  })
+);
+
 // POST /api/auth/logout -- JWTs are stateless, so the server has nothing to
 // destroy; the endpoint exists so the client has one call to make, and the
 // real logout is clearing the token in lib/api.js + App.jsx.

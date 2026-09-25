@@ -41,6 +41,13 @@ const templateSchema = new mongoose.Schema(
       },
     },
 
+    // Spec §2: a free-form tag list, so a template is findable by keyword and
+    // advanced filters read their options from the database instead of a
+    // hardcoded list. Deliberately separate from `technologies` -- technologies
+    // answer "what is it built with", tags answer "what is it like" ("one-page",
+    // "dark mode", "animated", "minimal").
+    tags: { type: [String], default: [] },
+
     thumbnail: { type: String, default: '' },
     screenshots: { type: [String], default: [] },
 
@@ -62,6 +69,10 @@ const templateSchema = new mongoose.Schema(
     authorName: { type: String, required: true, trim: true },
 
     downloadCount: { type: Number, default: 0 },
+    // Kept in step by routes/templates.js on every successful save/unsave, the
+    // same way downloadCount tracks distinct downloads. It is what makes
+    // spec §3's "Most Popular" a different answer from "Most Downloaded".
+    favoriteCount: { type: Number, default: 0 },
     status: { type: String, enum: STATUSES, default: 'approved' },
     featured: { type: Boolean, default: false },
   },
@@ -79,6 +90,11 @@ templateSchema.index({ technologies: 1, status: 1 });
 templateSchema.index({ author: 1, createdAt: -1 });
 templateSchema.index({ downloadCount: -1 });
 templateSchema.index({ featured: 1, downloadCount: -1 });
+templateSchema.index({ tags: 1, status: 1 });
+templateSchema.index({ favoriteCount: -1, downloadCount: -1 });
+// Spec §3 "Recently updated" sorts on updatedAt, and §5's "updated recently"
+// marker reads the same field -- both are index-backed, like every other sort.
+templateSchema.index({ updatedAt: -1, status: 1 });
 
 module.exports = mongoose.model('Template', templateSchema);
 module.exports.STATUSES = STATUSES;

@@ -5,6 +5,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const verifyToken = require('../middleware/auth');
 const User = require('../models/User');
 const Download = require('../models/Download');
+const Favorite = require('../models/Favorite');
 const Template = require('../models/Template');
 
 const router = express.Router();
@@ -100,6 +101,43 @@ router.get(
         })),
       templates,
     });
+  })
+);
+
+/**
+ * GET /api/users/me/favorites -- spec §1: the saved list.
+ *
+ * Templates come back as ordinary template objects (plus `favorited` and
+ * `savedAt`) so this page renders with the same card component as the rest of
+ * the catalogue instead of needing a second "saved" card variant.
+ */
+router.get(
+  '/me/favorites',
+  asyncHandler(async (req, res) => {
+    const rows = await Favorite.find({ userId: req.user.id })
+      .sort({ savedAt: -1 })
+      .limit(120)
+      .populate({
+        path: 'templateId',
+        select:
+          'title slug description category technologies tags thumbnail previewUrl githubUrl ' +
+          'downloadCount author authorName createdAt updatedAt status',
+      });
+
+    // A template deleted by its author leaves a dangling reference, and one an
+    // admin later rejected should not keep showing up -- drop both.
+    const templates = rows
+      .filter((r) => {
+        const t = r.templateId;
+        return t && (t.status === 'approved' || String(t.author) === String(req.user.id));
+      })
+      .map((r) => ({
+        ...r.templateId.toObject(),
+        favorited: true,
+        savedAt: r.savedAt,
+      }));
+
+    res.json({ success: true, total: templates.length, templates });
   })
 );
 

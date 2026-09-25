@@ -13,6 +13,7 @@ const FALLBACK = {
   technologies: [],
   filters: ['All'],
   sorts: ['newest'],
+  tags: [],
 };
 
 let cached = null;

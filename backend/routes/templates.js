@@ -13,6 +13,7 @@ const { SORTS, CATEGORIES } = require('../constants/catalog');
 const User = require('../models/User');
 const Template = require('../models/Template');
 const Download = require('../models/Download');
+const Favorite = require('../models/Favorite');
 const { makeThumbnail } = require('../services/placeholders');
 const storage = require('../services/storage');
 
@@ -21,9 +22,13 @@ const router = express.Router();
 /* ------------------------------------------------------------------ helpers */
 
 const MAX_TECHS = 10;
+const MAX_TAGS = 8;
 
-/** Accepts a real array, a JSON array string, or "React, Vue". */
-function parseTechnologies(raw) {
+/**
+ * Accepts a real array, a JSON array string (`["React","Vue"]`, which is how
+ * the upload form posts list fields) or a plain comma list.
+ */
+function parseList(raw) {
   if (Array.isArray(raw)) return raw;
   const s = String(raw || '').trim();
   if (!s) return [];
@@ -39,9 +44,32 @@ function parseTechnologies(raw) {
 }
 
 function cleanTechnologies(raw) {
-  return [...new Set(parseTechnologies(raw).map((t) => String(t).trim()).filter(Boolean))]
+  return [...new Set(parseList(raw).map((t) => String(t).trim()).filter(Boolean))]
     .slice(0, MAX_TECHS)
     .map((t) => t.slice(0, 30));
+}
+
+/**
+ * Spec §2: free-form keyword tags. Lowercased and de-duped so "Minimal" and
+ * "minimal" never become two filter options, and capped so the chip list on
+ * the details page cannot grow without bound.
+ */
+function cleanTags(raw) {
+  return [...new Set(parseList(raw).map((t) => String(t).trim().toLowerCase()).filter(Boolean))]
+    .slice(0, MAX_TAGS)
+    .map((t) => t.slice(0, 30));
+}
+
+/**
+ * Which of `ids` the current user has saved -- one query for a whole page
+ * instead of one per card. Anonymous callers get an empty set.
+ */
+async function favoritedSet(userId, ids) {
+  if (!userId || !ids.length) return new Set();
+  const rows = await Favorite.find({ userId, templateId: { $in: ids } })
+    .select('templateId')
+    .lean();
+  return new Set(rows.map((r) => String(r.templateId)));
 }
 
 /** Only http(s) URLs survive -- javascript: and data: are rejected. */
@@ -139,13 +167,17 @@ function canManage(template, user) {
 
 /**
  * GET /api/templates
- *   q=        free text (title, description, category, technology, developer)
+ *   q=        free text (title, description, category, technology, tag, developer)
  *   filter=   one entry of the flat chip list, or "All"
- *   sort=     newest | popular | downloads | az
+ *   sort=     newest | popular | downloads | updated | az
  *   page, limit
+ *
+ * `optionalAuth` exists only so the answer can say whether the signed-in
+ * visitor has already saved each row; anonymous traffic is untouched.
  */
 router.get(
   '/',
+  optionalAuth,
   asyncHandler(async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 12));
@@ -164,38 +196,58 @@ router.get(
           { title: rx },
           { description: rx },
           { technologies: rx },
+          { tags: rx },
           { category: rx },
           { authorName: rx },
         ],
       });
     }
-    // One chip can name either a category or a technology, so it matches
-    // whichever field applies -- see constants/catalog.js.
+    // One chip can name a category, a technology or a tag (spec §2), so it
+    // matches whichever field applies -- see constants/catalog.js.
     if (filter && filter !== 'All') {
-      and.push({ $or: [{ category: filter }, { technologies: filter }] });
+      and.push({
+        $or: [{ category: filter }, { technologies: filter }, { tags: filter.toLowerCase() }],
+      });
     }
     if (and.length) query.$and = and;
     if (featured) query.featured = true;
 
     const sortSpec = {
       newest: { createdAt: -1 },
-      popular: { downloadCount: -1, createdAt: -1 },
+      // Spec §3 wants "Most Popular" and "Most Downloaded" as two different
+      // answers: popular ranks what people saved first, downloads ranks raw
+      // transfer count. They used to share one sortSpec, which made the two
+      // menu entries do the same thing.
+      popular: { favoriteCount: -1, downloadCount: -1, createdAt: -1 },
       downloads: { downloadCount: -1, createdAt: -1 },
+      updated: { updatedAt: -1, createdAt: -1 },
       az: { title: 1 },
     }[sort];
 
-    const [templates, total] = await Promise.all([
-      Template.find(query).sort(sortSpec).skip((page - 1) * limit).limit(limit),
+    const templates = await Template.find(query)
+      .sort(sortSpec)
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const [total, saved] = await Promise.all([
       Template.countDocuments(query),
+      favoritedSet(req.user?.id, templates.map((t) => t._id)),
     ]);
+    const totalPages = Math.max(1, Math.ceil(total / limit));
 
     res.json({
       success: true,
-      templates,
-      total,
-      page,
-      pages: Math.max(1, Math.ceil(total / limit)),
-      hasMore: page * limit < total,
+      // Spec §4 names the pagination fields explicitly; they are the only
+      // ones we return so there is a single envelope to keep in step.
+      templates: templates.map((t) => ({
+        ...t.toObject(),
+        favorited: saved.has(String(t._id)),
+      })),
+      currentPage: page,
+      totalPages,
+      totalTemplates: total,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
     });
   })
 );
@@ -228,6 +280,7 @@ router.post(
     const description = String(req.body.description || '').trim();
     const category = String(req.body.category || '').trim();
     const technologies = cleanTechnologies(req.body.technologies);
+    const tags = cleanTags(req.body.tags);
 
     if (!title || title.length > 120) {
       return res.status(400).json({ error: 'Please provide a template title' });
@@ -265,6 +318,7 @@ router.post(
       description,
       category,
       technologies,
+      tags,
       thumbnail,
       screenshots: uploads.screenshots || [],
       previewUrl: previewUrl || '',
@@ -302,9 +356,11 @@ router.get(
       req.user?.role === 'admin';
     if (!visible) return res.status(404).json({ error: 'Template not found' });
 
+    const saved = await favoritedSet(req.user?.id, [template._id]);
+
     res.json({
       success: true,
-      template,
+      template: { ...template.toObject(), favorited: saved.has(String(template._id)) },
       canEdit: canManage(template, req.user) || req.user?.role === 'admin',
     });
   })
@@ -351,6 +407,11 @@ router.put(
       if (!techs.length) return res.status(400).json({ error: 'Add at least one technology' });
       updates.technologies = techs;
     }
+    // Tags are optional (spec §2), so an empty list is a legitimate update --
+    // the developer is clearing them, not forgetting them.
+    if (req.body.tags !== undefined) {
+      updates.tags = cleanTags(req.body.tags);
+    }
     if (req.body.previewUrl !== undefined) {
       const u = normalizeUrl(req.body.previewUrl);
       if (u === null) return res.status(400).json({ error: 'Demo URL must be a valid http(s) URL' });
@@ -390,7 +451,7 @@ router.put(
 
 /**
  * DELETE /api/templates/:id -- owner or admin.
- * Removes the stored archive, images and every download row.
+ * Removes the stored archive, images and every download or save row.
  */
 router.delete(
   '/:id',
@@ -406,6 +467,7 @@ router.delete(
     await Promise.all([
       Template.deleteOne({ _id: template._id }),
       Download.deleteMany({ templateId: template._id }),
+      Favorite.deleteMany({ templateId: template._id }),
     ]);
 
     deleteUrls([
@@ -415,6 +477,89 @@ router.delete(
     ].filter(Boolean));
 
     res.json({ success: true, message: 'Template deleted' });
+  })
+);
+
+/**
+ * POST /api/templates/:id/favorite -- spec §1: save a template for later.
+ *
+ * Idempotent by design. The (userId, templateId) unique index means a
+ * double-tap on the heart writes one row, not two, and the reply carries the
+ * user's new total so the UI never has to refetch the whole list.
+ */
+router.post(
+  '/:id/favorite',
+  (req, res, next) => {
+    // Distinct, human message for the common case (spec §19).
+    if (!req.headers.authorization) {
+      return res.status(401).json({ error: 'Please log in to save this template.' });
+    }
+    next();
+  },
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const template = await Template.findById(req.params.id).select('_id status author');
+    if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    let justSaved = false;
+    try {
+      await Favorite.create({ userId: req.user.id, templateId: template._id });
+      justSaved = true;
+    } catch (err) {
+      if (err?.code !== 11000) throw err; // 11000 = already saved, not an error
+    }
+
+    // Only touch the denormalised counter when we were the ones who inserted
+    // the row, exactly like downloadCount -- a double-tap cannot inflate it.
+    if (justSaved) {
+      await Template.updateOne({ _id: template._id }, { $inc: { favoriteCount: 1 } });
+    }
+
+    res.json({
+      success: true,
+      message: 'Saved to your favourites',
+      favorited: true,
+      favorites: await Favorite.countDocuments({ userId: req.user.id }),
+    });
+  })
+);
+
+/**
+ * DELETE /api/templates/:id/favorite -- spec §1: drop it from saved.
+ * Unsaving something that was never saved is not an error either; the state
+ * afterwards is the one that matters.
+ */
+router.delete(
+  '/:id/favorite',
+  (req, res, next) => {
+    if (!req.headers.authorization) {
+      return res.status(401).json({ error: 'Please log in to manage your saved templates.' });
+    }
+    next();
+  },
+  verifyToken,
+  asyncHandler(async (req, res) => {
+    const template = await Template.findById(req.params.id).select('_id');
+    if (!template) return res.status(404).json({ error: 'Template not found' });
+
+    const { deletedCount } = await Favorite.deleteOne({
+      userId: req.user.id,
+      templateId: template._id,
+    });
+    // Decrement only if a row actually went away, so a repeat delete cannot
+    // drive the counter negative.
+    if (deletedCount) {
+      await Template.updateOne({ _id: template._id }, { $inc: { favoriteCount: -1 } });
+    }
+
+    res.json({
+      success: true,
+      message: 'Removed from your favourites',
+      favorited: false,
+      favorites: await Favorite.countDocuments({ userId: req.user.id }),
+    });
   })
 );
 

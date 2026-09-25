@@ -27,7 +27,7 @@ export default function Templates() {
   const page = Math.max(1, parseInt(params.get('page'), 10) || 1);
 
   const patch = useCallback(
-    (next) => {
+    (next, replace = false) => {
       const merged = { q, filter, sort, page: String(page), ...next };
       const out = {};
       for (const [k, v] of Object.entries(merged)) {
@@ -39,7 +39,7 @@ export default function Templates() {
           (k === 'q' && !value);
         if (value && !isDefault) out[k] = value;
       }
-      setParams(out, { replace: false });
+      setParams(out, { replace });
     },
     [q, filter, sort, page, setParams]
   );
@@ -68,13 +68,24 @@ export default function Templates() {
     };
   }, [q, filter, sort, page]);
 
+  // A stale bookmark (?page=9) or a filter that narrows the result set can
+  // land past the last page. Correct the URL instead of claiming there is
+  // nothing to show -- the answer is "page 4 of 3", not "no results".
+  useEffect(() => {
+    const last = data?.totalPages || 1;
+    if (data && page > last) patch({ page: String(last) }, true);
+  }, [data, page, patch]);
+
   const changePage = (next) => {
     patch({ page: String(next) });
     topRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const templates = data?.templates || [];
-  const totalPages = data?.pages || 1;
+  const totalPages = data?.totalPages || 1;
+  // The URL points past the last page; the effect above is already correcting
+  // it, so keep the skeleton up rather than inventing an empty result set.
+  const outOfRange = Boolean(data) && page > totalPages;
 
   return (
     <div className="flex min-h-[70vh] flex-col">
@@ -88,13 +99,19 @@ export default function Templates() {
             {q ? `Results for “${q}”` : filter !== 'All' ? filter : 'All templates'}
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-500">
-            Filter by category or technology, then download the source archive. Every template
-            shows its technologies, developer and download count before you commit.
+            Filter by category, technology or tag, then download the source archive. Every template
+            shows its technologies, tags, developer and download count before you commit.
           </p>
         </header>
 
         <div className="mt-7">
-          <SearchFilters q={q} filter={filter} sort={sort} total={data?.total} onChange={patch} />
+          <SearchFilters
+            q={q}
+            filter={filter}
+            sort={sort}
+            total={data?.totalTemplates}
+            onChange={patch}
+          />
         </div>
 
         <section className="mt-8" aria-label="Templates">
@@ -104,6 +121,8 @@ export default function Templates() {
             <div className="ui-alert ui-alert--error" role="alert">
               {error}
             </div>
+          ) : outOfRange ? (
+            <TemplateGridSkeleton count={PAGE_SIZE} />
           ) : templates.length === 0 ? (
             <div className="ui-card p-10 text-center">
               <span className="text-4xl" aria-hidden>

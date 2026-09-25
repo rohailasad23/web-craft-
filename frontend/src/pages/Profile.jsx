@@ -25,9 +25,16 @@ export default function Profile() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  // Spec §11 lives in its own <form>: nesting it inside the profile form
+  // would be invalid HTML and would submit both at once.
+  const [pw, setPw] = useState({ current: '', next: '', confirm: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState('');
+
   const isDeveloper = user?.role === 'developer' || user?.role === 'admin';
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
+  const updatePw = (field) => (e) => setPw({ ...pw, [field]: e.target.value });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -73,6 +80,42 @@ export default function Profile() {
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePassword = async (e) => {
+    e.preventDefault();
+    if (pwSaving) return;
+
+    if (!pw.current || !pw.next) {
+      setPwError('Enter your current password and the new one.');
+      return;
+    }
+    if (pw.next.length < 6) {
+      setPwError('The new password must be at least 6 characters.');
+      return;
+    }
+    if (pw.next !== pw.confirm) {
+      setPwError('The two new passwords do not match.');
+      return;
+    }
+
+    setPwSaving(true);
+    setPwError('');
+    try {
+      await api.post('/api/auth/change-password', {
+        currentPassword: pw.current,
+        newPassword: pw.next,
+      });
+      // Clearing the fields is the confirmation: nothing is left pre-filled.
+      setPw({ current: '', next: '', confirm: '' });
+      toast.success('Password updated');
+    } catch (err) {
+      const msg = getErrorMessage(err, 'Could not change your password');
+      setPwError(msg);
+      toast.error(msg);
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -217,6 +260,88 @@ export default function Profile() {
             <Link to="/dashboard" className="ui-btn ui-btn--soft !px-5 !py-3">
               Back to dashboard
             </Link>
+          </div>
+        </form>
+
+        {/* ---------------------------------------- change password (§11) */}
+        <form onSubmit={handlePassword} className="ui-card mt-6 space-y-5 p-6">
+          <div>
+            <h2 className="text-base font-bold text-ink-900">Change password</h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-500">
+              The current password is always required — even while you are signed in — so an
+              unattended session cannot take your account over.
+            </p>
+          </div>
+
+          {pwError && (
+            <div className="ui-alert ui-alert--error" role="alert">
+              {pwError}
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="current-password" className="ui-label">
+              Current password
+            </label>
+            <input
+              id="current-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={pw.current}
+              onChange={updatePw('current')}
+              className="ui-input"
+            />
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div>
+              <label htmlFor="new-password" className="ui-label">
+                New password
+              </label>
+              <input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={6}
+                value={pw.next}
+                onChange={updatePw('next')}
+                className="ui-input"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirm-password" className="ui-label">
+                Confirm new password
+              </label>
+              <input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={6}
+                value={pw.confirm}
+                onChange={updatePw('confirm')}
+                className="ui-input"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={pwSaving}
+              className="ui-btn ui-btn--primary !px-6 !py-3"
+            >
+              {pwSaving ? (
+                <>
+                  <span className="ui-spinner" aria-hidden /> Updating…
+                </>
+              ) : (
+                'Update password'
+              )}
+            </button>
+            <span className="text-xs text-ink-500">At least 6 characters.</span>
           </div>
         </form>
       </main>

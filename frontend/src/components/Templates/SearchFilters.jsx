@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useCatalog } from '../../lib/catalog';
 
 const SORT_LABELS = {
-  newest: 'Newest',
-  popular: 'Most downloaded',
-  downloads: 'Downloads',
+  newest: 'Latest',
+  popular: 'Most popular',
+  downloads: 'Most downloaded',
+  updated: 'Recently updated',
   az: 'A–Z',
 };
 
@@ -13,6 +14,10 @@ const SORT_LABELS = {
  *
  * Every value comes from the server, so a new category appears here without a
  * frontend change. Chips are URLs, so a filtered view is shareable.
+ *
+ * Tags get a dropdown rather than a third row of chips: spec §2 wants them
+ * database-driven, and §28 warns against piling on more small buttons once the
+ * chip list is already this long.
  */
 export default function SearchFilters({
   q = '',
@@ -22,7 +27,7 @@ export default function SearchFilters({
   onChange,
   inputRef,
 }) {
-  const { filters, sorts } = useCatalog();
+  const { filters, sorts, tags } = useCatalog();
   const [term, setTerm] = useState(q);
   const first = useRef(true);
 
@@ -82,6 +87,25 @@ export default function SearchFilters({
             ))}
           </select>
         </label>
+
+        {tags?.length > 0 && (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="whitespace-nowrap font-semibold text-ink-500">Tag</span>
+            <select
+              value={tags.includes(filter) ? filter : ''}
+              onChange={(e) => patch({ filter: e.target.value || 'All' })}
+              className="ui-select !w-auto"
+              aria-label="Filter by tag"
+            >
+              <option value="">Any tag</option>
+              {tags.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="stagger -mx-1 flex flex-wrap gap-2 px-1">

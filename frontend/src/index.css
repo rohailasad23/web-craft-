@@ -281,6 +281,16 @@
   }
   .ui-btn--soft:hover { background: var(--color-brand-100); }
 
+  /* Spec §1: the already-saved state of the Save control. Rose rather than
+     the success green -- saving something is a preference, not a task that
+     finished. Deliberately border-less, exactly like .ui-btn--soft, so the
+     paired Save / Share row stays perfectly level. */
+  .ui-btn--saved {
+    background: #ffe4e6;
+    color: #e11d48;
+  }
+  .ui-btn--saved:hover { background: #fecdd3; }
+
   .ui-btn--block { width: 100%; }
   .ui-btn--lg { padding: 0.875rem 2rem; font-size: 1.0625rem; border-radius: 0.875rem; }
 

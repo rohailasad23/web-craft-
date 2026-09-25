@@ -14,6 +14,7 @@ const SIGNED_OUT_EXTRA = [{ to: '/developers', label: 'Developers' }];
 const USER_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/downloads', label: 'My Downloads' },
+  { to: '/saved', label: 'Saved' },
 ];
 
 const DEVELOPER_LINKS = [

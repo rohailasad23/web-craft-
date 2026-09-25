@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 
 import Home from './pages/Home';
 import Templates from './pages/Templates';
@@ -8,6 +8,7 @@ import Developers from './pages/Developers';
 import DeveloperProfile from './pages/DeveloperProfile';
 import Dashboard from './pages/Dashboard';
 import MyDownloads from './pages/MyDownloads';
+import SavedTemplates from './pages/SavedTemplates';
 import Profile from './pages/Profile';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
@@ -21,6 +22,7 @@ import { loadCatalog } from './lib/catalog';
 import DeveloperDashboard from './pages/developer/Dashboard';
 import MyTemplates from './pages/developer/MyTemplates';
 import UploadTemplate from './pages/developer/Upload';
+import { NotFound, Forbidden, Unauthorized } from './pages/StatusPages';
 
 /** Read persisted session state; never trust that localStorage is valid. */
 function readSession() {
@@ -117,6 +119,14 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
               }
             />
             <Route
+              path="/saved"
+              element={
+                <ProtectedRoute>
+                  <SavedTemplates />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/profile"
               element={
                 <ProtectedRoute>
@@ -159,8 +169,12 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
               }
             />
 
-            {/* Anything unknown: home, so a stale bookmark never dead-ends. */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+            {/* Spec §17: real failure pages instead of a silent bounce home.
+                Specific paths are declared first so they never fall through
+                to the catch-all below. */}
+            <Route path="/401" element={<Unauthorized />} />
+            <Route path="/403" element={<Forbidden />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </div>
       </div>

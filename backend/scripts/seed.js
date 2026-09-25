@@ -22,6 +22,7 @@ const { CATEGORIES, TECHNOLOGIES } = require('../constants/catalog');
 const User = require('../models/User');
 const Template = require('../models/Template');
 const Download = require('../models/Download');
+const Favorite = require('../models/Favorite');
 const { makeThumbnail } = require('../services/placeholders');
 const storage = require('../services/storage');
 
@@ -41,20 +42,20 @@ const SEED_BROWSERS = {
   bio: 'Just here to grab a few templates.',
 };
 
-/** title, category, technologies, blurb */
+/** title, category, technologies, blurb, tags */
 const SEED_TEMPLATES = [
-  ['Nordic Portfolio', 'Portfolio', ['HTML/CSS', 'JavaScript'], 'A calm, editorial portfolio with large type, generous whitespace and a dark-mode toggle. Ships with project, about and contact views.'],
-  ['Studio Agency', 'Landing Page', ['React', 'Next.js'], 'A conversion-focused agency landing page with a pricing-free layout, testimonial rail and sticky call-to-action bar.'],
-  ['Aurora Store', 'E-commerce', ['Vue', 'JavaScript'], 'A modern storefront shell: product grid, filter drawer, cart summary and a checkout step that is already wired to mock data.'],
-  ['Pulse Dashboard', 'Dashboard', ['React', 'Tailwind CSS'], 'An analytics dashboard with stat cards, a date-range switcher, sortable tables and an empty state that does not look broken.'],
-  ['Ink & Paper', 'Blog', ['HTML/CSS', 'Node.js'], 'A typography-first blog theme with a reading-time indicator, tag pages and an RSS feed already generated.'],
-  ['Frame Folio', 'Portfolio', ['Vue', 'HTML/CSS'], 'A grid-driven portfolio that keeps every thumbnail the same aspect ratio, with keyboard navigation between projects.'],
-  ['Signal SaaS', 'Landing Page', ['Next.js', 'JavaScript'], 'A SaaS marketing page with a feature grid, FAQ accordion and a waitlist form validated entirely on the client.'],
-  ['Marketplace Kit', 'E-commerce', ['React', 'Node.js'], 'A two-sided marketplace starter with seller profiles, review cards and search that survives a page refresh.'],
-  ['Metric Console', 'Dashboard', ['JavaScript', 'HTML/CSS'], 'A lightweight admin console: sidebar navigation, breadcrumb trail, form validation and toasts for every mutation.'],
-  ['Longform', 'Blog', ['Next.js', 'React'], 'A long-form writing theme with footnote support, a table of contents that tracks scroll position and full-bleed images.'],
-  ['Craft Commerce', 'E-commerce', ['HTML/CSS', 'JavaScript'], 'A product landing page for a single-item shop: gallery, size selector, reviews and an add-to-cart micro-interaction.'],
-  ['Resume One', 'Portfolio', ['HTML/CSS'], 'A single-page resume template that prints cleanly to A4, with skills, timeline and a downloadable PDF stylesheet.'],
+  ['Nordic Portfolio', 'Portfolio', ['HTML/CSS', 'JavaScript'], 'A calm, editorial portfolio with large type, generous whitespace and a dark-mode toggle. Ships with project, about and contact views.', ['minimal', 'dark mode', 'portfolio']],
+  ['Studio Agency', 'Landing Page', ['React', 'Next.js'], 'A conversion-focused agency landing page with a pricing-free layout, testimonial rail and sticky call-to-action bar.', ['agency', 'landing', 'animated']],
+  ['Aurora Store', 'E-commerce', ['Vue', 'JavaScript'], 'A modern storefront shell: product grid, filter drawer, cart summary and a checkout step that is already wired to mock data.', ['ecommerce', 'responsive', 'modern']],
+  ['Pulse Dashboard', 'Dashboard', ['React', 'Tailwind CSS'], 'An analytics dashboard with stat cards, a date-range switcher, sortable tables and an empty state that does not look broken.', ['dashboard', 'charts', 'responsive']],
+  ['Ink & Paper', 'Blog', ['HTML/CSS', 'Node.js'], 'A typography-first blog theme with a reading-time indicator, tag pages and an RSS feed already generated.', ['typography', 'blog', 'minimal']],
+  ['Frame Folio', 'Portfolio', ['Vue', 'HTML/CSS'], 'A grid-driven portfolio that keeps every thumbnail the same aspect ratio, with keyboard navigation between projects.', ['grid', 'portfolio', 'keyboard']],
+  ['Signal SaaS', 'Landing Page', ['Next.js', 'JavaScript'], 'A SaaS marketing page with a feature grid, FAQ accordion and a waitlist form validated entirely on the client.', ['saas', 'landing', 'startup']],
+  ['Marketplace Kit', 'E-commerce', ['React', 'Node.js'], 'A two-sided marketplace starter with seller profiles, review cards and search that survives a page refresh.', ['ecommerce', 'search', 'responsive']],
+  ['Metric Console', 'Dashboard', ['JavaScript', 'HTML/CSS'], 'A lightweight admin console: sidebar navigation, breadcrumb trail, form validation and toasts for every mutation.', ['dashboard', 'admin', 'forms']],
+  ['Longform', 'Blog', ['Next.js', 'React'], 'A long-form writing theme with footnote support, a table of contents that tracks scroll position and full-bleed images.', ['blog', 'typography', 'reading']],
+  ['Craft Commerce', 'E-commerce', ['HTML/CSS', 'JavaScript'], 'A product landing page for a single-item shop: gallery, size selector, reviews and an add-to-cart micro-interaction.', ['landing', 'ecommerce', 'micro-interactions']],
+  ['Resume One', 'Portfolio', ['HTML/CSS'], 'A single-page resume template that prints cleanly to A4, with skills, timeline and a downloadable PDF stylesheet.', ['one page', 'print', 'portfolio']],
 ];
 
 /** Write an SVG thumbnail to disk and return its public URL. */
@@ -180,8 +181,10 @@ async function seed() {
   const backend = await connectDB();
   console.log(`🗄  Database backend: ${backend}`);
 
-  // Start from a known state so re-running never doubles the data.
-  await Promise.all([Template.deleteMany({}), Download.deleteMany({})]);
+  // Start from a known state so re-running never doubles the data. Favorites
+  // go too: every template below is about to be recreated with a new id, and
+  // leaving rows behind would orphan them.
+  await Promise.all([Template.deleteMany({}), Download.deleteMany({}), Favorite.deleteMany({})]);
   await User.deleteMany({ email: { $in: [SEED_USER.email, SEED_BROWSERS.email] } });
 
   const dev = await User.create(SEED_USER);
@@ -190,7 +193,7 @@ async function seed() {
   console.log(`👤 User:      ${SEED_BROWSERS.email}  (password: ${SEED_BROWSERS.passwordHash})`);
 
   const docs = [];
-  for (const [title, category, technologies, description] of SEED_TEMPLATES) {
+  for (const [title, category, technologies, description, tags] of SEED_TEMPLATES) {
     const slug = Template.slugify(title);
     const archive = writeArchive(slug, title);
     docs.push({
@@ -199,6 +202,7 @@ async function seed() {
       description,
       category,
       technologies,
+      tags,
       thumbnail: writeThumbnail(title, category),
       screenshots: [],
       previewUrl: 'https://example.com',
