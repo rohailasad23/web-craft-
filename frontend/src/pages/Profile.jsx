@@ -6,6 +6,11 @@ import { useToast } from '../components/Common/Toast';
 import { initials } from '../lib/format';
 import Footer from '../components/Common/Footer';
 
+// Spec §10 ceilings, mirrored from backend/models/User.js so the form caps
+// the list itself instead of finding out from a 400 after the round trip.
+const MAX_SKILLS = 12;
+const MAX_LINKS = 6;
+
 /**
  * /profile -- account settings (spec §5).
  *
@@ -31,10 +36,45 @@ export default function Profile() {
   const [pwSaving, setPwSaving] = useState(false);
   const [pwError, setPwError] = useState('');
 
+  // Spec §10 -- the developer half of the profile, kept in its own object so
+  // the section can be skipped for a normal account without the payload
+  // carrying four fields the server would only store back as blanks.
+  const [dev, setDev] = useState({
+    skills: user?.skills || [],
+    website: user?.website || '',
+    github: user?.github || '',
+    socialLinks: user?.socialLinks || [],
+  });
+  const [skillDraft, setSkillDraft] = useState('');
+
   const isDeveloper = user?.role === 'developer' || user?.role === 'admin';
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
   const updatePw = (field) => (e) => setPw({ ...pw, [field]: e.target.value });
+  const updateDev = (field) => (e) => setDev({ ...dev, [field]: e.target.value });
+
+  // Skills are a chip list, same interaction as the upload form's tags: type,
+  // Enter or Add, click a chip to take it off. Deduplicated case-insensitively
+  // so "React" and "react" cannot both sit in the list.
+  const addSkill = () => {
+    const s = skillDraft.replace(/\s+/g, ' ').trim().slice(0, 40);
+    setSkillDraft('');
+    if (!s || dev.skills.length >= MAX_SKILLS) return;
+    if (dev.skills.some((k) => k.toLowerCase() === s.toLowerCase())) return;
+    setDev({ ...dev, skills: [...dev.skills, s] });
+  };
+  const removeSkill = (skill) =>
+    setDev({ ...dev, skills: dev.skills.filter((s) => s !== skill) });
+
+  const setLink = (index, field, value) =>
+    setDev({
+      ...dev,
+      socialLinks: dev.socialLinks.map((l, i) => (i === index ? { ...l, [field]: value } : l)),
+    });
+  const addLink = () =>
+    setDev({ ...dev, socialLinks: [...dev.socialLinks, { label: '', url: '' }] });
+  const removeLink = (index) =>
+    setDev({ ...dev, socialLinks: dev.socialLinks.filter((_, i) => i !== index) });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,11 +88,26 @@ export default function Profile() {
     setSaving(true);
     setError('');
     try {
-      await api.put('/api/users/me', {
+      const body = {
         name: form.name.trim(),
         bio: form.bio.trim(),
         avatar: form.avatar.trim(),
-      });
+      };
+
+      // Spec §10: only sent for an account that can actually show these.
+      // Rows left entirely blank are dropped rather than sent to be refused;
+      // a half-filled row is kept, because the server has the clearer
+      // message for it ("Every social link needs a name").
+      if (isDeveloper) {
+        body.skills = dev.skills;
+        body.website = dev.website.trim();
+        body.github = dev.github.trim();
+        body.socialLinks = dev.socialLinks
+          .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
+          .filter((l) => l.label || l.url);
+      }
+
+      await api.put('/api/users/me', body);
       await refresh?.();
       toast.success('Profile updated');
     } catch (err) {
@@ -216,6 +271,183 @@ export default function Profile() {
               </p>
             </div>
           </section>
+
+          {/* ------------------------------------ developer profile (§10) */}
+          {isDeveloper && (
+            <section className="ui-card space-y-6 p-6">
+              <div>
+                <h2 className="text-base font-bold text-ink-900">Developer profile</h2>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-500">
+                  What shows on your public developer page. Everything here is optional — leave a
+                  field empty and it simply does not appear.
+                </p>
+              </div>
+
+              {/* --------------------------------------------------- skills */}
+              <div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <label htmlFor="skill" className="ui-label">
+                    Skills
+                  </label>
+                  {/* Live count, so the cap is never a surprise. */}
+                  <span
+                    className={`text-xs font-semibold tabular-nums ${
+                      dev.skills.length >= MAX_SKILLS ? 'text-red-600' : 'text-ink-500'
+                    }`}
+                    aria-live="polite"
+                  >
+                    {dev.skills.length}/{MAX_SKILLS}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    id="skill"
+                    type="text"
+                    value={skillDraft}
+                    onChange={(e) => setSkillDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Enter adds the chip. Without this it would submit the
+                      // whole profile form from a field that only holds one word.
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addSkill();
+                      }
+                    }}
+                    maxLength={40}
+                    placeholder="React, Figma, SCSS…"
+                    aria-describedby="skill-help"
+                    className="ui-input"
+                  />
+                  <button type="button" onClick={addSkill} className="ui-btn ui-btn--soft shrink-0">
+                    Add
+                  </button>
+                </div>
+                <p id="skill-help" className="mt-2 text-xs text-ink-500">
+                  The things you actually work with. Up to {MAX_SKILLS}.
+                </p>
+
+                {dev.skills.length > 0 && (
+                  <ul className="mt-3 flex flex-wrap gap-2">
+                    {dev.skills.map((skill) => (
+                      <li key={skill}>
+                        <button
+                          type="button"
+                          onClick={() => removeSkill(skill)}
+                          aria-label={`Remove skill ${skill}`}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                        >
+                          {skill} <span aria-hidden>×</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              {/* ------------------------------------------ website / github */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="website" className="ui-label">
+                    Website <span className="font-normal text-ink-500">(optional)</span>
+                  </label>
+                  <input
+                    id="website"
+                    type="url"
+                    value={dev.website}
+                    onChange={updateDev('website')}
+                    maxLength={300}
+                    placeholder="https://yoursite.com"
+                    aria-describedby="website-help"
+                    className="ui-input"
+                  />
+                  <p id="website-help" className="mt-2 text-xs text-ink-500">
+                    Saved exactly as typed, so it has to be a full http(s) address.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="github" className="ui-label">
+                    GitHub <span className="font-normal text-ink-500">(optional)</span>
+                  </label>
+                  <input
+                    id="github"
+                    type="url"
+                    value={dev.github}
+                    onChange={updateDev('github')}
+                    maxLength={300}
+                    placeholder="https://github.com/username"
+                    className="ui-input"
+                  />
+                </div>
+              </div>
+
+              {/* ---------------------------------------------- social links */}
+              <fieldset className="space-y-3">
+                <legend className="ui-label flex w-full items-baseline justify-between gap-3">
+                  <span>Social links</span>
+                  <span
+                    className="text-xs font-semibold tabular-nums text-ink-500"
+                    aria-live="polite"
+                  >
+                    {dev.socialLinks.length}/{MAX_LINKS}
+                  </span>
+                </legend>
+
+                {dev.socialLinks.map((link, i) => (
+                  <div key={i} className="flex flex-wrap gap-2 sm:flex-nowrap">
+                    <div className="min-w-0 sm:w-44">
+                      <label htmlFor={`link-label-${i}`} className="sr-only">
+                        Link name {i + 1}
+                      </label>
+                      <input
+                        id={`link-label-${i}`}
+                        type="text"
+                        value={link.label}
+                        onChange={(e) => setLink(i, 'label', e.target.value)}
+                        maxLength={30}
+                        placeholder="Twitter"
+                        className="ui-input"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <label htmlFor={`link-url-${i}`} className="sr-only">
+                        Link address {i + 1}
+                      </label>
+                      <input
+                        id={`link-url-${i}`}
+                        type="url"
+                        value={link.url}
+                        onChange={(e) => setLink(i, 'url', e.target.value)}
+                        maxLength={300}
+                        placeholder="https://…"
+                        className="ui-input"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeLink(i)}
+                      aria-label={`Remove link ${link.label || i + 1}`}
+                      className="inline-flex shrink-0 items-center justify-center rounded-lg border border-ink-200 bg-white px-3.5 text-ink-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <span aria-hidden>×</span>
+                    </button>
+                  </div>
+                ))}
+
+                <p className="text-xs text-ink-500">
+                  Name the site and paste the full address — both are needed before it appears.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={addLink}
+                  disabled={dev.socialLinks.length >= MAX_LINKS}
+                  className="ui-btn ui-btn--soft px-4 py-2 text-sm disabled:opacity-50"
+                >
+                  Add social link
+                </button>
+              </fieldset>
+            </section>
+          )}
 
           {/* ---------------------------------------------- account type */}
           <section className="ui-card p-6">

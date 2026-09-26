@@ -9,6 +9,7 @@ import ShareButton from '../components/Common/ShareButton';
 import Breadcrumbs from '../components/Common/Breadcrumbs';
 import ReportDialog from '../components/Common/ReportDialog';
 import { formatBytes, formatDate, formatCount, initials, mediaUrl } from '../lib/format';
+import { metaDescription, ogImage, useSeo } from '../lib/seo';
 import Footer from '../components/Common/Footer';
 
 /**
@@ -46,6 +47,25 @@ export default function TemplateDetails() {
         ? [template.thumbnail]
         : []
     : [];
+
+  // Spec §15: title, description, OG card, preview image and canonical, all
+  // built from the record. Nothing is published until the fetch answers --
+  // useSeo ignores an empty title, so a crawler never sees "Loading…".
+  useSeo(
+    template
+      ? {
+          title: `${template.title} — free ${
+            template.category ? template.category.toLowerCase() : 'website'
+          } template | web craft`,
+          description:
+            metaDescription(template.description) ||
+            `Preview and download ${template.title} for free on web craft.`,
+          image: ogImage(template.thumbnail),
+          path: `/templates/${template.slug}`,
+          type: 'article',
+        }
+      : {}
+  );
 
   useEffect(() => {
     let alive = true;

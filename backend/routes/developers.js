@@ -19,6 +19,12 @@ function publicDeveloper(user, stats = {}) {
     joinedAt: user.createdAt,
     templateCount: stats.templateCount || 0,
     totalDownloads: stats.totalDownloads || 0,
+    // Spec §10. Links only ever surface if the developer filled them in --
+    // there is no verification here, so nothing is claimed that was not typed.
+    skills: user.skills || [],
+    website: user.website || '',
+    github: user.github || '',
+    socialLinks: user.socialLinks || [],
   };
 }
 

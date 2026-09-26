@@ -71,8 +71,9 @@ export default function AdminUsers() {
 
   const setStatusFilter = (next) => {
     const merged = new URLSearchParams(params);
-    if (next === 'all') merged.delete('status');
-    else merged.set('status', next);
+    // Written explicitly so the URL says which view it is, and so every admin
+    // filter follows one rule. See Templates.jsx.
+    merged.set('status', next);
     setParams(merged, { replace: true });
   };
 

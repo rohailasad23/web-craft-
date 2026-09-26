@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
+import { useSeo } from '../../lib/seo';
 
 const ROLE_OPTIONS = [
   { value: 'user', icon: '👤', title: 'Downloader' },
@@ -27,6 +28,14 @@ export default function Register({ onAuth }) {
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Spec §15 -- same reasoning as the sign-in form.
+  useSeo({
+    title: 'Create an account — web craft',
+    description: 'Join web craft to save templates, download the source, and publish your own.',
+    path: '/register',
+    noindex: true,
+  });
   const mounted = useRef(true);
 
   // StrictMode mounts, unmounts and mounts again in dev, so the flag has

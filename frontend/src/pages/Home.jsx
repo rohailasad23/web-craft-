@@ -4,6 +4,7 @@ import api from '../lib/api';
 import { useCatalog } from '../lib/catalog';
 import { useSession } from '../lib/session';
 import { formatCount, initials } from '../lib/format';
+import { useSeo } from '../lib/seo';
 import TemplateCard from '../components/Templates/TemplateCard';
 import { TemplateGridSkeleton, StatSkeleton } from '../components/Common/Skeletons';
 import Footer from '../components/Common/Footer';
@@ -41,6 +42,15 @@ export default function Home() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useSession();
   const { categories, ready } = useCatalog();
+
+  // Spec §15. Home is the one page whose metadata is static -- it is also the
+  // page the branded og.png was designed for.
+  useSeo({
+    title: 'web craft — free website template marketplace',
+    description:
+      'A free marketplace for ready-made website templates. Browse by category or technology, preview live demos, and download the source.',
+    path: '/',
+  });
 
   const [term, setTerm] = useState('');
   const [featured, setFeatured] = useState(null);

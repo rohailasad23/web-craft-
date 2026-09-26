@@ -8,6 +8,9 @@ const User = require('../models/User');
 const Download = require('../models/Download');
 const Favorite = require('../models/Favorite');
 const Template = require('../models/Template');
+const { normalizeUrl } = require('../utils/urls');
+
+const { MAX_SKILLS, MAX_SOCIAL_LINKS } = User;
 
 const router = express.Router();
 
@@ -36,6 +39,63 @@ router.put(
     if (typeof req.body.name === 'string') updates.name = req.body.name.trim().slice(0, 80);
     if (typeof req.body.bio === 'string') updates.bio = req.body.bio.trim().slice(0, 500);
     if (typeof req.body.avatar === 'string') updates.avatar = req.body.avatar.trim().slice(0, 500);
+
+    // Spec §10 -- the developer half of the profile. Everything here is
+    // optional, every URL goes through the same http(s)-only rule as the
+    // template links, and rubbish is a 400 rather than a silent drop: a
+    // saved profile must not quietly disagree with what was typed.
+    if ('skills' in req.body) {
+      if (!Array.isArray(req.body.skills)) {
+        return res.status(400).json({ error: 'Skills must be a list' });
+      }
+      const seen = new Set();
+      const skills = [];
+      for (const raw of req.body.skills) {
+        const s = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+        if (!s) continue;
+        const key = s.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        skills.push(s);
+        if (skills.length >= MAX_SKILLS) break; // capped, never rejected on length
+      }
+      updates.skills = skills;
+    }
+
+    const URL_FIELDS = { website: 'Website', github: 'GitHub' };
+    for (const [field, label] of Object.entries(URL_FIELDS)) {
+      if (!(field in req.body)) continue;
+      const url = normalizeUrl(req.body[field]);
+      if (url === null) {
+        return res.status(400).json({ error: `${label} must be a valid http(s) URL` });
+      }
+      updates[field] = url;
+    }
+
+    if ('socialLinks' in req.body) {
+      const raw = req.body.socialLinks;
+      if (!Array.isArray(raw)) {
+        return res.status(400).json({ error: 'Social links must be a list' });
+      }
+      if (raw.length > MAX_SOCIAL_LINKS) {
+        return res
+          .status(400)
+          .json({ error: `You can keep up to ${MAX_SOCIAL_LINKS} social links` });
+      }
+      const links = [];
+      for (const item of raw) {
+        const label = String(item?.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 30);
+        const url = normalizeUrl(item?.url);
+        if (!label) return res.status(400).json({ error: 'Every social link needs a name' });
+        if (!url) {
+          return res
+            .status(400)
+            .json({ error: `"${label}" needs a valid http(s) URL` });
+        }
+        links.push({ label, url });
+      }
+      updates.socialLinks = links;
+    }
 
     if ('role' in req.body) {
       const next = req.body.role;

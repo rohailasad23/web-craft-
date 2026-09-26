@@ -56,8 +56,11 @@ export default function AdminTemplates() {
 
   const setStatus = (next) => {
     const merged = new URLSearchParams(params);
-    if (next === 'all') merged.delete('status');
-    else merged.set('status', next);
+    // Always written, even for "all": when this parameter is missing the page
+    // defaults to "pending", so deleting it would claim we were already there
+    // -- the URL would not change, no re-render would happen, and the tab
+    // would sit still.
+    merged.set('status', next);
     setParams(merged, { replace: true });
   };
 

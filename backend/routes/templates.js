@@ -10,6 +10,7 @@ const verifyToken = require('../middleware/auth');
 const { requireRole, optionalAuth, requireActive } = require('../middleware/auth');
 const { handleUpload } = require('../middleware/upload');
 const { SORTS, CATEGORIES } = require('../constants/catalog');
+const { normalizeUrl } = require('../utils/urls');
 const User = require('../models/User');
 const Template = require('../models/Template');
 const { LICENSES } = require('../models/Template');
@@ -72,18 +73,6 @@ async function favoritedSet(userId, ids) {
     .select('templateId')
     .lean();
   return new Set(rows.map((r) => String(r.templateId)));
-}
-
-/** Only http(s) URLs survive -- javascript: and data: are rejected. */
-function normalizeUrl(value) {
-  const s = String(value || '').trim();
-  if (!s) return '';
-  try {
-    const u = new URL(s);
-    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Case-insensitive substring search that cannot be used as a regex DoS. */

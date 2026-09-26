@@ -45,9 +45,32 @@ const userSchema = new mongoose.Schema(
 
     avatar: { type: String, trim: true, default: '' },
     bio: { type: String, trim: true, maxlength: 500, default: '' },
+
+    // Spec §10 -- the developer half of the profile. None of it is required
+    // and none of it is verified: the platform has no way to check a link, so
+    // an empty field is left empty rather than filled with a placeholder.
+    skills: { type: [{ type: String, trim: true, maxlength: 40 }], default: [] },
+    website: { type: String, trim: true, maxlength: 300, default: '' },
+    github: { type: String, trim: true, maxlength: 300, default: '' },
+    socialLinks: {
+      type: [
+        new mongoose.Schema(
+          {
+            label: { type: String, trim: true, maxlength: 30, required: true },
+            url: { type: String, trim: true, maxlength: 300, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true } // replaces the manual createdAt/updatedAt fields
 );
+
+/** Spec §10 ceilings. Small enough to stay readable, big enough to be useful. */
+const MAX_SKILLS = 12;
+const MAX_SOCIAL_LINKS = 6;
 
 userSchema.pre('save', async function () {
   if (!this.isModified('passwordHash')) return;
@@ -63,3 +86,5 @@ module.exports = mongoose.model('User', userSchema);
 module.exports.ROLES = ROLES;
 module.exports.ASSIGNABLE_ROLES = ASSIGNABLE_ROLES;
 module.exports.STATUSES = STATUSES;
+module.exports.MAX_SKILLS = MAX_SKILLS;
+module.exports.MAX_SOCIAL_LINKS = MAX_SOCIAL_LINKS;

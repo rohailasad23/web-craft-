@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { formatCount, initials } from '../lib/format';
+import { useSeo } from '../lib/seo';
 import Footer from '../components/Common/Footer';
 
 const PAGE_SIZE = 12;
@@ -11,6 +12,14 @@ export default function Developers() {
   const [params, setParams] = useSearchParams();
   const q = params.get('q') || '';
   const page = Math.max(1, parseInt(params.get('page'), 10) || 1);
+
+  // Spec §15. A search over the directory is a destination of its own.
+  useSeo({
+    title: q ? `Developers matching “${q}” — web craft` : 'Developers — web craft',
+    description:
+      'The developers publishing free website templates on web craft. See what each one has released and how often it has been downloaded.',
+    path: `/developers${params.toString() ? `?${params.toString()}` : ''}`,
+  });
 
   const [term, setTerm] = useState(q);
   const [data, setData] = useState(null);

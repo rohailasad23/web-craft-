@@ -35,6 +35,11 @@ function publicUser(user) {
     status: user.status || 'active',
     avatar: user.avatar || '',
     bio: user.bio || '',
+    // Spec §10 -- developer profile extras, empty for a plain account.
+    skills: user.skills || [],
+    website: user.website || '',
+    github: user.github || '',
+    socialLinks: user.socialLinks || [],
     createdAt: user.createdAt,
   };
 }

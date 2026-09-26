@@ -10,6 +10,32 @@
       content="web craft — a free marketplace for ready-made website templates. Browse by category or technology, preview, and download the source."
     />
     <meta name="color-scheme" content="light" />
+
+    <!--
+      These are the site defaults for crawlers that do not run JavaScript.
+      src/lib/seo.js rewrites them per page once the app boots; every page
+      that mounts puts them back on unmount.
+    -->
+    <meta property="og:site_name" content="web craft" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="web craft — free website template marketplace" />
+    <meta
+      property="og:description"
+      content="A free marketplace for ready-made website templates. Browse by category or technology, preview, and download the source."
+    />
+    <meta property="og:url" content="/" />
+    <meta property="og:image" content="/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="web craft — ready-made website templates" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="web craft — free website template marketplace" />
+    <meta
+      name="twitter:description"
+      content="A free marketplace for ready-made website templates. Browse, preview and download the source."
+    />
+    <meta name="twitter:image" content="/og.png" />
+
     <title>web craft — free website template marketplace</title>
   </head>
   <body>

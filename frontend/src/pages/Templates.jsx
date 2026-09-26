@@ -5,6 +5,7 @@ import SearchFilters from '../components/Templates/SearchFilters';
 import TemplateCard from '../components/Templates/TemplateCard';
 import { TemplateGridSkeleton } from '../components/Common/Skeletons';
 import Breadcrumbs from '../components/Common/Breadcrumbs';
+import { useSeo } from '../lib/seo';
 import Footer from '../components/Common/Footer';
 
 const PAGE_SIZE = 12;
@@ -26,6 +27,21 @@ export default function Templates() {
   const filter = params.get('filter') || 'All';
   const sort = params.get('sort') || 'newest';
   const page = Math.max(1, parseInt(params.get('page'), 10) || 1);
+
+  // Spec §15. A search or a category is its own destination for a crawler,
+  // so the title, description and canonical all follow the query string --
+  // self-referencing, which is what Google asks for on filterable listings.
+  const label = q
+    ? `“${q}” search results`
+    : filter !== 'All'
+      ? `${filter} templates`
+      : 'Free website templates';
+
+  useSeo({
+    title: `${label} — web craft`,
+    description: `Browse ${label.toLowerCase()} on web craft. Preview each one live, see the technology behind it, and download the source for free.`,
+    path: `/templates${params.toString() ? `?${params.toString()}` : ''}`,
+  });
 
   const patch = useCallback(
     (next, replace = false) => {

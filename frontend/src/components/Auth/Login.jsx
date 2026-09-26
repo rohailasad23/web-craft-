@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
+import { useSeo } from '../../lib/seo';
 
 /** Sign in (spec §5). Preserves the URL the visitor was heading for. */
 export default function Login({ onAuth }) {
@@ -11,6 +12,15 @@ export default function Login({ onAuth }) {
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Spec §15: a sign-in form has nothing to index, and pointing a crawler at
+  // it only dilutes the public pages.
+  useSeo({
+    title: 'Sign in — web craft',
+    description: 'Sign in to web craft to save templates, download the source, and publish your own.',
+    path: '/login',
+    noindex: true,
+  });
   const mounted = useRef(true);
 
   // StrictMode mounts, unmounts and mounts again in dev, so the flag has

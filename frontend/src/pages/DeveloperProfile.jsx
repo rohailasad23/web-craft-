@@ -5,6 +5,7 @@ import { formatDate, formatCount, initials } from '../lib/format';
 import TemplateCard from '../components/Templates/TemplateCard';
 import { TemplateGridSkeleton } from '../components/Common/Skeletons';
 import Breadcrumbs from '../components/Common/Breadcrumbs';
+import { metaDescription, ogImage, useSeo } from '../lib/seo';
 import Footer from '../components/Common/Footer';
 
 /** /developers/:id -- name, avatar, bio, counts and published templates (§10). */
@@ -14,6 +15,21 @@ export default function DeveloperProfile() {
   const [templates, setTemplates] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+
+  // Spec §15. Name in the title, bio as the description, avatar as the
+  // preview image when it is something a scraper can actually fetch.
+  useSeo(
+    developer
+      ? {
+          title: `${developer.name} — free website templates | web craft`,
+          description:
+            metaDescription(developer.bio) ||
+            `${developer.name} on web craft. Browse the free website templates they have published and download the source.`,
+          image: ogImage(developer.avatar),
+          path: `/developers/${id}`,
+        }
+      : {}
+  );
 
   useEffect(() => {
     let alive = true;
@@ -71,6 +87,17 @@ export default function DeveloperProfile() {
 
   const list = templates || [];
 
+  // Spec §10. Everything here is optional, so each row is built only from a
+  // field the developer actually filled in -- an empty profile shows none of
+  // it rather than a list of dead "Website: —" lines. `rel` matches the
+  // preview links (§34): these addresses are not ours to vouch for.
+  const links = [
+    developer.website ? { label: 'Website', href: developer.website } : null,
+    developer.github ? { label: 'GitHub', href: developer.github } : null,
+    ...(developer.socialLinks || []).map((l) => ({ label: l.label, href: l.url })),
+  ].filter(Boolean);
+  const skills = developer.skills || [];
+
   return (
     <div className="flex min-h-[70vh] flex-col">
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 pb-16 pt-8 sm:px-6">
@@ -97,6 +124,41 @@ export default function DeveloperProfile() {
               <p className="mt-2 text-sm leading-relaxed text-ink-700">
                 {developer.bio || 'This developer has not written a bio yet.'}
               </p>
+
+              {skills.length > 0 && (
+                <ul
+                  className="mt-3 flex flex-wrap gap-2"
+                  aria-label={`${developer.name}'s skills`}
+                >
+                  {skills.map((skill) => (
+                    <li
+                      key={skill}
+                      className="rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700"
+                    >
+                      {skill}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {links.length > 0 && (
+                <ul className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                  {links.map((link, i) => (
+                    <li key={`${link.label}-${i}`}>
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow"
+                        className="inline-flex items-center gap-1.5 font-semibold text-brand-700 hover:text-brand-800 hover:underline"
+                      >
+                        {link.label}
+                        <span aria-hidden>↗</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
               <p className="mt-2 text-xs text-ink-500">Joined {formatDate(developer.joinedAt)}</p>
             </div>
 

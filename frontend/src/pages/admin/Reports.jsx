@@ -78,8 +78,10 @@ export default function AdminReports() {
 
   const setStatusFilter = (next) => {
     const merged = new URLSearchParams(params);
-    if (next === 'all') merged.delete('status');
-    else merged.set('status', next);
+    // Always written, even for "all" -- this page defaults to "pending" when
+    // the parameter is absent, so deleting it would be a no-op and the tab
+    // would never move. See Templates.jsx.
+    merged.set('status', next);
     setParams(merged, { replace: true });
   };
 
@@ -115,6 +117,11 @@ export default function AdminReports() {
                 type="button"
                 role="tab"
                 aria-selected={active}
+                aria-label={
+                  typeof badge === 'number' && badge > 0
+                    ? `${f.label}, ${badge}`
+                    : f.label
+                }
                 onClick={() => setStatusFilter(f.value)}
                 className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors ${
                   active
