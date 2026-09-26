@@ -137,6 +137,10 @@ export default function Navbar() {
   return (
     <nav
       ref={navRef}
+      // Named so it is distinguishable from the three labelled navs in the
+      // footer: an unnamed <nav> is announced as just "navigation" and gives
+      // a screen-reader user four navs with no way to tell them apart.
+      aria-label="Main"
       className="sticky top-0 z-40 animate-slide-down border-b border-ink-100 bg-white/85 backdrop-blur-md supports-[backdrop-filter]:bg-white/70"
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5 sm:px-6">

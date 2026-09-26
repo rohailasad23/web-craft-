@@ -38,6 +38,41 @@ function magnetLeave(event) {
  * Discovery homepage (spec §7): hero + search, category entry points, featured,
  * latest and popular templates, and a contributor section.
  */
+/**
+ * The hero search box, on its own so that typing re-renders this component and
+ * nothing else. Held as state inside Home, every keystroke re-ran Home's whole
+ * render -- four template grids, the category rail, contributors, FAQ -- purely
+ * to keep one controlled input honest, and then did nothing until submit.
+ */
+function HeroSearch() {
+  const navigate = useNavigate();
+  const [term, setTerm] = useState('');
+
+  const submit = (event) => {
+    event.preventDefault();
+    navigate(term.trim() ? `/templates?q=${encodeURIComponent(term.trim())}` : '/templates');
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="mx-auto mt-8 flex max-w-xl animate-fade-up gap-2 [animation-delay:.24s]"
+    >
+      <input
+        type="search"
+        value={term}
+        onChange={(e) => setTerm(e.target.value)}
+        placeholder="Search “portfolio”, “React”, “dashboard”…"
+        aria-label="Search templates"
+        className="ui-input !py-3.5"
+      />
+      <button type="submit" className="ui-btn ui-btn--primary !px-6 !py-3.5 shrink-0">
+        Search
+      </button>
+    </form>
+  );
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useSession();
@@ -52,7 +87,6 @@ export default function Home() {
     path: '/',
   });
 
-  const [term, setTerm] = useState('');
   const [featured, setFeatured] = useState(null);
   const [latest, setLatest] = useState(null);
   const [popular, setPopular] = useState(null);
@@ -82,11 +116,6 @@ export default function Home() {
       alive = false;
     };
   }, []);
-
-  const submit = (event) => {
-    event.preventDefault();
-    navigate(term.trim() ? `/templates?q=${encodeURIComponent(term.trim())}` : '/templates');
-  };
 
   const goCategory = useCallback(
     (c) => navigate(`/templates?filter=${encodeURIComponent(c)}`),
@@ -129,22 +158,7 @@ export default function Home() {
             premium tier, no subscription.
           </p>
 
-          <form
-            onSubmit={submit}
-            className="mx-auto mt-8 flex max-w-xl animate-fade-up gap-2 [animation-delay:.24s]"
-          >
-            <input
-              type="search"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              placeholder="Search “portfolio”, “React”, “dashboard”…"
-              aria-label="Search templates"
-              className="ui-input !py-3.5"
-            />
-            <button type="submit" className="ui-btn ui-btn--primary !px-6 !py-3.5 shrink-0">
-              Search
-            </button>
-          </form>
+          <HeroSearch />
 
           <div className="mt-8 flex animate-fade-up flex-col items-center justify-center gap-3 [animation-delay:.32s] sm:flex-row">
             <span

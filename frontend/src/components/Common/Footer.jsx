@@ -46,7 +46,10 @@ export default function Footer() {
 
         {GROUPS.map((group) => (
           <nav key={group.title} aria-label={group.title}>
-            <h3 className="text-sm font-bold text-ink-900">{group.title}</h3>
+            {/* h2, not h3: on pages whose last heading is the page h1 (the
+                listing pages), an h3 here would be a skipped level, which is
+                a real heading-order failure for screen-reader users. */}
+            <h2 className="text-sm font-bold text-ink-900">{group.title}</h2>
             <ul className="stagger mt-4 space-y-2.5">
               {group.links.map((link) => (
                 <li key={link.label}>

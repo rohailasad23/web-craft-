@@ -58,6 +58,35 @@ export default function UploadTemplate() {
   const [error, setError] = useState('');
   const [touched, setTouched] = useState(false);
 
+  // One object URL per selected file, instead of one per render.
+  //
+  // These were called inline in the JSX, and this page re-renders on every
+  // keystroke -- so typing a description minted a fresh URL for the same File
+  // each time (leaking all of them) and handed <img> a new src on every
+  // render, which reloads the preview. Revoking is done once a URL is no
+  // longer the preview, i.e. after its replacement has committed: revoking in
+  // an effect cleanup would strand the image still on screen.
+  const thumbnailPreview = useMemo(
+    () => (thumbnail ? URL.createObjectURL(thumbnail) : ''),
+    [thumbnail]
+  );
+  const screenshotPreviews = useMemo(
+    () => screenshots.map((f) => URL.createObjectURL(f)),
+    [screenshots]
+  );
+  const issuedPreviews = useRef(new Set());
+
+  useEffect(() => {
+    const live = new Set([thumbnailPreview, ...screenshotPreviews].filter(Boolean));
+    for (const url of [...issuedPreviews.current]) {
+      if (!live.has(url)) {
+        URL.revokeObjectURL(url);
+        issuedPreviews.current.delete(url);
+      }
+    }
+    live.forEach((url) => issuedPreviews.current.add(url));
+  }, [thumbnailPreview, screenshotPreviews]);
+
   useEffect(() => {
     if (!isEdit) return undefined;
     let alive = true;
@@ -479,9 +508,22 @@ export default function UploadTemplate() {
               error={errors.archive}
               hint={isEdit ? 'Leave empty to keep the current archive.' : undefined}
             >
-              <div
-                onClick={() => fileInput.current?.click()}
-                className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed p-4 transition-colors ${
+              {/* The input is sr-only rather than display:none: a
+                  display:none input can never take focus, so a keyboard user
+                  could not upload a file at all. It sits before the label so
+                  `peer` can light the label up when the input is focused --
+                  sr-only clips the input's own focus ring out of view. */}
+              <input
+                id="upload-archive"
+                ref={fileInput}
+                type="file"
+                accept=".zip,application/zip,application/x-zip-compressed"
+                className="peer sr-only"
+                onChange={pickFile(setArchive, MAX_ZIP, 'Archive')}
+              />
+              <label
+                htmlFor="upload-archive"
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed p-4 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2 ${
                   archive
                     ? 'border-emerald-300 bg-emerald-50'
                     : 'border-ink-200 bg-ink-50 hover:border-brand-300 hover:bg-brand-50/50'
@@ -502,6 +544,10 @@ export default function UploadTemplate() {
                   <button
                     type="button"
                     onClick={(e) => {
+                      // preventDefault as well as stopPropagation: the wrapper
+                      // is a <label for> now, and a label's default activation
+                      // would otherwise re-open the file picker.
+                      e.preventDefault();
                       e.stopPropagation();
                       setArchive(null);
                     }}
@@ -511,22 +557,25 @@ export default function UploadTemplate() {
                     ✕
                   </button>
                 )}
-              </div>
-              <input
-                ref={fileInput}
-                type="file"
-                accept=".zip,application/zip,application/x-zip-compressed"
-                className="hidden"
-                onChange={pickFile(setArchive, MAX_ZIP, 'Archive')}
-              />
+              </label>
             </Field>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <Field label="Thumbnail" hint="Optional — one is generated if you skip it.">
-                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-ink-200 bg-ink-50 p-3 transition-colors hover:border-brand-300">
+                <input
+                  id="upload-thumbnail"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="peer sr-only"
+                  onChange={pickFile(setThumbnail, MAX_IMAGE, 'Thumbnail')}
+                />
+                <label
+                  htmlFor="upload-thumbnail"
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-ink-200 bg-ink-50 p-3 transition-colors hover:border-brand-300 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2"
+                >
                   {(thumbnail || thumbnailUrl) && (
                     <img
-                      src={thumbnail ? URL.createObjectURL(thumbnail) : mediaUrl(thumbnailUrl)}
+                      src={thumbnail ? thumbnailPreview : mediaUrl(thumbnailUrl)}
                       alt=""
                       className="h-14 w-20 rounded-lg object-cover"
                       onError={(e) => {
@@ -544,12 +593,6 @@ export default function UploadTemplate() {
                     </span>
                     <span className="mt-0.5 block">PNG / JPG / WebP · max 5MB</span>
                   </span>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    className="hidden"
-                    onChange={pickFile(setThumbnail, MAX_IMAGE, 'Thumbnail')}
-                  />
                 </label>
               </Field>
 
@@ -557,7 +600,29 @@ export default function UploadTemplate() {
                 label="Screenshots"
                 hint={`${screenshots.length + existingShots.length} of ${MAX_SHOTS} used`}
               >
-                <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-ink-200 bg-ink-50 p-3 transition-colors hover:border-brand-300">
+                <input
+                  id="upload-screenshots"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  multiple
+                  className="peer sr-only"
+                  onChange={(e) => {
+                    const chosen = Array.from(e.target.files || []);
+                    e.target.value = '';
+                    const room = MAX_SHOTS - existingShots.length - screenshots.length;
+                    const accepted = chosen
+                      .filter((f) => f.size <= MAX_IMAGE)
+                      .slice(0, Math.max(0, room));
+                    if (accepted.length < chosen.length) {
+                      toast.info(`Only ${accepted.length} screenshot(s) added — limit is ${MAX_SHOTS}.`);
+                    }
+                    if (accepted.length) setScreenshots((s) => [...s, ...accepted]);
+                  }}
+                />
+                <label
+                  htmlFor="upload-screenshots"
+                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-ink-200 bg-ink-50 p-3 transition-colors hover:border-brand-300 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2"
+                >
                   <span className="text-xl" aria-hidden>
                     🖼
                   </span>
@@ -567,24 +632,6 @@ export default function UploadTemplate() {
                     </span>
                     <span className="mt-0.5 block">Up to {MAX_SHOTS} images</span>
                   </span>
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => {
-                      const chosen = Array.from(e.target.files || []);
-                      e.target.value = '';
-                      const room = MAX_SHOTS - existingShots.length - screenshots.length;
-                      const accepted = chosen
-                        .filter((f) => f.size <= MAX_IMAGE)
-                        .slice(0, Math.max(0, room));
-                      if (accepted.length < chosen.length) {
-                        toast.info(`Only ${accepted.length} screenshot(s) added — limit is ${MAX_SHOTS}.`);
-                      }
-                      if (accepted.length) setScreenshots((s) => [...s, ...accepted]);
-                    }}
-                  />
                 </label>
               </Field>
             </div>
@@ -606,7 +653,7 @@ export default function UploadTemplate() {
                 {screenshots.map((f, i) => (
                   <span key={f.name + i} className="relative">
                     <img
-                      src={URL.createObjectURL(f)}
+                      src={screenshotPreviews[i] || ''}
                       alt=""
                       className="h-16 w-24 rounded-lg object-cover ring-1 ring-brand-200"
                     />

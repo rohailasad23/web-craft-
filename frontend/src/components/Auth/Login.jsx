@@ -76,7 +76,7 @@ export default function Login({ onAuth }) {
      taller-than-expected card fully reachable if a very short window ever has
      to fall back to this container's own scrollbar. */
   return (
-    <div className="h-[calc(100dvh_-_var(--nav-h))] overflow-y-auto overscroll-contain px-5 py-3 sm:px-6">
+    <main className="h-[calc(100dvh_-_var(--nav-h))] overflow-y-auto overscroll-contain px-5 py-3 sm:px-6">
       <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center">
         <div className="animate-fade-up">
           <h1 className="ui-title text-2xl sm:text-3xl">Sign in to your account</h1>
@@ -171,6 +171,6 @@ export default function Login({ onAuth }) {
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

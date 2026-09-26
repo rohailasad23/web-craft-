@@ -95,7 +95,7 @@ export default function Register({ onAuth }) {
      keeps the composition identical on desktop and mobile instead of stacking
      into a long, scrolling form on phones. */
   return (
-    <div className="h-[calc(100dvh_-_var(--nav-h))] overflow-y-auto overscroll-contain px-5 py-3 sm:px-6">
+    <main className="h-[calc(100dvh_-_var(--nav-h))] overflow-y-auto overscroll-contain px-5 py-3 sm:px-6">
       <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center">
         <div className="animate-fade-up">
           <h1 className="ui-title text-2xl sm:text-3xl">Join web craft</h1>
@@ -256,6 +256,6 @@ export default function Register({ onAuth }) {
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

@@ -173,11 +173,11 @@ export default function NotificationBell() {
 
           <div className="max-h-[60vh] overflow-y-auto overscroll-contain">
             {loading && !items.length && (
-              <p className="px-4 py-6 text-center text-sm text-ink-400">Loading…</p>
+              <p className="px-4 py-6 text-center text-sm text-ink-500">Loading…</p>
             )}
             {error && <p className="px-4 py-4 text-sm text-red-600">{error}</p>}
             {!loading && !error && !items.length && (
-              <p className="px-4 py-6 text-center text-sm text-ink-400">
+              <p className="px-4 py-6 text-center text-sm text-ink-500">
                 Nothing yet. Approvals, rejections and reports show up here.
               </p>
             )}
@@ -212,7 +212,7 @@ export default function NotificationBell() {
                               {n.message}
                             </span>
                           ) : null}
-                          <span className="mt-1 block text-[11px] text-ink-400">
+                          <span className="mt-1 block text-[11px] text-ink-500">
                             {timeAgo(n.createdAt)}
                           </span>
                         </span>

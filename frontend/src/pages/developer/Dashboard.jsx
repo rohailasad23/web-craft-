@@ -127,8 +127,17 @@ export default function DeveloperDashboard() {
                           aria-label={`${t.title}: ${t.downloadCount} downloads`}
                         >
                           <div
-                            className="h-full rounded-full bg-gradient-to-r from-brand-500 to-brand-700 transition-[width] duration-700"
-                            style={{ width: `${Math.max(pct, t.downloadCount > 0 ? 4 : 0)}%` }}
+                            className="h-full origin-left rounded-full bg-gradient-to-r from-brand-500 to-brand-700 transition-transform duration-700"
+                            style={{
+                              // scaleX rather than width: the track already
+                              // clips (overflow-hidden + rounded-full), so the
+                              // bar looks the same either way -- but transform
+                              // is composited, while animating width re-ran
+                              // layout for every bar on every frame.
+                              transform: `scaleX(${
+                                Math.max(pct, t.downloadCount > 0 ? 4 : 0) / 100
+                              })`,
+                            }}
                           />
                         </div>
                       </li>

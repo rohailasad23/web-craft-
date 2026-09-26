@@ -159,7 +159,7 @@ export default function ReportDialog({ open, onClose, template }) {
           </p>
         )}
 
-        <p className="mt-4 text-xs leading-relaxed text-ink-400">
+        <p className="mt-4 text-xs leading-relaxed text-ink-500">
           One open report per template, per account. We do not tell the developer who reported it.
         </p>
       </form>

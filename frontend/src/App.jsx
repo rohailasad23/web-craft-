@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 
 import Home from './pages/Home';
@@ -135,12 +135,18 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
 
-  const contextValue = {
-    ...session,
-    login: onLogin,
-    logout: onLogout,
-    refresh: onRefresh,
-  };
+  // Memoised: a fresh object here would change the Provider's value on every
+  // render of App, re-rendering every consumer -- Navbar, layout, pages -- on
+  // each state change that has nothing to do with the session.
+  const contextValue = useMemo(
+    () => ({
+      ...session,
+      login: onLogin,
+      logout: onLogout,
+      refresh: onRefresh,
+    }),
+    [session, onLogin, onLogout, onRefresh]
+  );
 
   return (
     <SessionContext.Provider value={contextValue}>

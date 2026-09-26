@@ -28,7 +28,9 @@ export default function Breadcrumbs({ items = [], home = true, className = '' })
           return (
             <li key={`${crumb.label}-${i}`} className="flex min-w-0 items-center gap-1.5">
               {i > 0 && (
-                <span aria-hidden className="shrink-0 text-ink-300">
+                // ink-500, not ink-300: the separator is visible text, and
+                // the value ink-300 would imply (#cbd5e1) is 1.61:1 on white.
+                <span aria-hidden className="shrink-0 text-ink-500">
                   /
                 </span>
               )}

@@ -195,7 +195,7 @@ export default function AdminOverview() {
       </div>
 
       {!loading && data && (
-        <p className="mt-8 text-xs text-ink-400">
+        <p className="mt-8 text-xs text-ink-500">
           Figures are counted live. Generated {formatDate(new Date().toISOString())}.
         </p>
       )}

@@ -82,6 +82,15 @@ userSchema.methods.comparePassword = function (candidate) {
   return bcrypt.compare(candidate, this.passwordHash);
 };
 
+// Every read path that is not a lookup by _id filters or sorts on these, and
+// neither had an index: the developer directory (spec §10) and the admin roster
+// (§9) both narrow by role and order by createdAt, the admin overview counts by
+// status, and login reads by email -- the email one already exists as the
+// unique constraint on the field, so these three are what was missing.
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ createdAt: -1 });
+userSchema.index({ status: 1, createdAt: -1 });
+
 module.exports = mongoose.model('User', userSchema);
 module.exports.ROLES = ROLES;
 module.exports.ASSIGNABLE_ROLES = ASSIGNABLE_ROLES;

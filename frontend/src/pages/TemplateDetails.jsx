@@ -331,7 +331,7 @@ export default function TemplateDetails() {
                           <span className="text-sm font-extrabold tracking-tight text-ink-900">
                             {entry.version ? `v${entry.version}` : 'Update'}
                           </span>
-                          <span className="text-xs text-ink-400">
+                          <span className="text-xs text-ink-500">
                             {formatDate(entry.createdAt)}
                           </span>
                         </div>
@@ -400,7 +400,7 @@ export default function TemplateDetails() {
                       {template.license}
                     </span>
                   ) : (
-                    <span className="text-sm font-normal italic text-ink-400">
+                    <span className="text-sm font-normal italic text-ink-500">
                       License not specified.
                     </span>
                   )}
@@ -548,7 +548,7 @@ export default function TemplateDetails() {
                     }
                     setReporting(true);
                   }}
-                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold text-ink-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
                 >
                   <span aria-hidden>⚑</span> Report this template
                 </button>

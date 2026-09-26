@@ -16,7 +16,27 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+
+// Required on use, not at import: mongodb-memory-server only matters when we
+// are about to start an embedded mongod, and loading it eagerly made every
+// process -- including `DB_MODE=atlas`, which can never need it -- pay for a
+// package whose first job is checking a multi-ten-megabyte binary cache.
+function loadMemoryServer() {
+  const mod = require('mongodb-memory-server');
+  return mod.MongoMemoryServer || mod.default?.MongoMemoryServer;
+}
+
+/**
+ * Driver failures quote the connection string, and a bad MONGODB_URI produces
+ * things like `Invalid connection string mongodb+srv://user:password@cluster…`
+ * -- so a mistyped option would print the live credential straight to stdout
+ * and into any log file it lands in. Everything printed here is redacted first.
+ */
+function redact(message) {
+  return String(message || '')
+    .replace(/\/\/[^@\s]*@/g, '//***@')
+    .replace(/mongodb(\+srv)?:\/\/\S+/gi, 'mongodb$1://***');
+}
 
 const MODE = String(process.env.DB_MODE || 'auto').trim().toLowerCase();
 const ATLAS_URI = process.env.MONGODB_URI || '';
@@ -49,7 +69,8 @@ function startLocalMongo() {
     started = (async () => {
       ensureLocalDbPath();
       console.log(`⏳ Starting local MongoDB ${LOCAL_BINARY_VERSION} (first run downloads it)…`);
-      memoryServer = await MongoMemoryServer.create({
+      const MemoryServer = loadMemoryServer();
+      memoryServer = await MemoryServer.create({
         instance: {
           port: LOCAL_PORT,
           storageEngine: 'wiredTiger',
@@ -75,7 +96,7 @@ async function tryAtlas() {
     console.log('✅ Connected to MongoDB Atlas');
     return 'atlas';
   } catch (err) {
-    const reason = String(err.message || err).split('\n')[0];
+    const reason = redact(String(err.message || err)).split('\n')[0];
     console.warn(`⚠️  Atlas unreachable: ${reason}`);
     await mongoose.disconnect().catch(() => {});
     return null;

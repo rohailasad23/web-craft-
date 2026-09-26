@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { formatCount, initials } from '../lib/format';
@@ -6,6 +6,49 @@ import { useSeo } from '../lib/seo';
 import Footer from '../components/Common/Footer';
 
 const PAGE_SIZE = 12;
+
+/**
+ * The directory search box, debounced into the URL from inside.
+ *
+ * It owns the keystroke state so that typing re-renders this one input instead
+ * of the whole page: held in Developers, every character re-ran the directory
+ * render above -- header, grid, pagination -- for an input that only commits
+ * 350ms after the last keystroke.
+ */
+function DeveloperSearch({ initial, onCommit }) {
+  const [term, setTerm] = useState(initial);
+  const [committed, setCommitted] = useState(initial);
+
+  // Browser back/forward, or a link into the page with ?q= already on it.
+  useEffect(() => {
+    setTerm(initial);
+    setCommitted(initial);
+  }, [initial]);
+
+  // Debounce the box into the URL, same as the template search.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (term !== committed) {
+        setCommitted(term);
+        onCommit(term.trim());
+      }
+    }, 350);
+    return () => clearTimeout(id);
+  }, [term, committed, onCommit]);
+
+  return (
+    <div className="mt-7 max-w-md">
+      <input
+        type="search"
+        value={term}
+        onChange={(e) => setTerm(e.target.value)}
+        placeholder="Search developers…"
+        aria-label="Search developers"
+        className="ui-input"
+      />
+    </div>
+  );
+}
 
 /** Directory of contributors (spec §10) -- makes the site feel like a community. */
 export default function Developers() {
@@ -21,12 +64,9 @@ export default function Developers() {
     path: `/developers${params.toString() ? `?${params.toString()}` : ''}`,
   });
 
-  const [term, setTerm] = useState(q);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => setTerm(q), [q]);
 
   useEffect(() => {
     let alive = true;
@@ -44,17 +84,16 @@ export default function Developers() {
     };
   }, [q, page]);
 
-  // Debounce the box into the URL, same as the template search.
-  useEffect(() => {
-    const id = setTimeout(() => {
-      if (term !== q) {
-        const next = { page: '1' };
-        if (term.trim()) next.q = term.trim();
-        setParams(next);
-      }
-    }, 350);
-    return () => clearTimeout(id);
-  }, [term, q, setParams]);
+  // Called by the search box once it settles (its own debounce, so typing does
+  // not re-render this component). A new query always restarts at page 1.
+  const commit = useCallback(
+    (value) => {
+      const next = { page: '1' };
+      if (value) next.q = value;
+      setParams(next);
+    },
+    [setParams]
+  );
 
   const developers = data?.developers || [];
   const totalPages = data?.pages || 1;
@@ -71,16 +110,7 @@ export default function Developers() {
           </p>
         </header>
 
-        <div className="mt-7 max-w-md">
-          <input
-            type="search"
-            value={term}
-            onChange={(e) => setTerm(e.target.value)}
-            placeholder="Search developers…"
-            aria-label="Search developers"
-            className="ui-input"
-          />
-        </div>
+        <DeveloperSearch initial={q} onCommit={commit} />
 
         <section className="mt-8" aria-label="Developers">
           {loading && !data ? (

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 
 const ToastContext = createContext(null);
 
@@ -48,12 +48,15 @@ export function ToastProvider({ children }) {
     [dismiss]
   );
 
-  const value = {
-    show,
-    success: (m) => show(m, 'success'),
-    error: (m) => show(m, 'error'),
-    info: (m) => show(m, 'info'),
-  };
+  // Three wrappers that would otherwise be new functions on every render, and
+  // a context value that would then be new on every render too -- so every
+  // `useToast()` consumer re-rendered whenever the provider's parent did,
+  // however unrelated. All four are stable after the first render.
+  const success = useCallback((m) => show(m, 'success'), [show]);
+  const error = useCallback((m) => show(m, 'error'), [show]);
+  const info = useCallback((m) => show(m, 'info'), [show]);
+
+  const value = useMemo(() => ({ show, success, error, info }), [show, success, error, info]);
 
   return (
     <ToastContext.Provider value={value}>

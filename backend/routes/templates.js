@@ -11,6 +11,7 @@ const { requireRole, optionalAuth, requireActive } = require('../middleware/auth
 const { handleUpload } = require('../middleware/upload');
 const { SORTS, CATEGORIES } = require('../constants/catalog');
 const { normalizeUrl } = require('../utils/urls');
+const { safeRegex } = require('../utils/safeRegex');
 const User = require('../models/User');
 const Template = require('../models/Template');
 const { LICENSES } = require('../models/Template');
@@ -75,27 +76,37 @@ async function favoritedSet(userId, ids) {
   return new Set(rows.map((r) => String(r.templateId)));
 }
 
-/** Case-insensitive substring search that cannot be used as a regex DoS. */
-function safeRegex(input) {
-  const s = String(input).trim().slice(0, 80);
-  return new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-}
-
+/**
+ * A free slug for `title`, without asking the database once per candidate.
+ *
+ * The base name, then `-2`, `-3`, … are all tested in a single query over the
+ * slug range, which is what the unique index already guards anyway -- the loop
+ * used to be one round trip per suffix, so a contested title cost up to 61.
+ */
 async function uniqueSlug(title) {
   const base = Template.slugify(title) || 'template';
-  let slug = base;
+  const range = new RegExp(`^${safeRegex(base).source}(?:-\\d+)?$`, 'i');
+  const rows = await Template.find({ slug: range }).select('slug').lean();
+  const taken = new Set(rows.map((r) => r.slug));
+
+  if (!taken.has(base)) return base;
   for (let i = 2; i <= 60; i++) {
-    if (!(await Template.exists({ slug }))) return slug;
-    slug = `${base}-${i}`;
+    const candidate = `${base}-${i}`;
+    if (!taken.has(candidate)) return candidate;
   }
   return `${base}-${crypto.randomBytes(3).toString('hex')}`;
 }
 
-/** Write an SVG placeholder to disk and return its public URL. */
-function generateThumbnail(title, category) {
+/**
+ * Write an SVG placeholder to disk and return its public URL.
+ *
+ * Async because it runs inside the upload handler: a synchronous write on the
+ * request path parks the whole event loop behind a disk flush.
+ */
+async function generateThumbnail(title, category) {
   const key = `thumbnails/${Date.now().toString(36)}-${crypto.randomBytes(6).toString('hex')}.svg`;
-  fs.mkdirSync(path.dirname(storage.resolveKey(key)), { recursive: true });
-  fs.writeFileSync(storage.resolveKey(key), makeThumbnail(title, category), 'utf8');
+  await fs.promises.mkdir(path.dirname(storage.resolveKey(key)), { recursive: true });
+  await fs.promises.writeFile(storage.resolveKey(key), makeThumbnail(title, category), 'utf8');
   return storage.urlFor(key);
 }
 
@@ -252,7 +263,12 @@ router.get(
   verifyToken,
   requireRole('developer', 'admin'),
   asyncHandler(async (req, res) => {
-    const templates = await Template.find({ author: req.user.id }).sort({ createdAt: -1 });
+    // Capped at 200 like the moderation list above. This is the developer's
+    // own management screen, so it is sorted oldest-to-newest for editing --
+    // but it was the one Template query in the app with no bound at all.
+    const templates = await Template.find({ author: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(200);
     res.json({ success: true, templates });
   })
 );
@@ -392,7 +408,7 @@ router.post(
     const author = await User.findById(req.user.id);
     if (!author) return res.status(401).json({ error: 'Account no longer exists' });
 
-    const thumbnail = uploads.thumbnail || generateThumbnail(title, category);
+    const thumbnail = uploads.thumbnail || (await generateThumbnail(title, category));
 
     const template = await Template.create({
       title,
@@ -790,7 +806,13 @@ router.post(
     }
 
     const abs = storage.resolveKey(template.file.key);
-    if (!fs.existsSync(abs)) {
+    // Checked without blocking: existsSync() parks the event loop behind a
+    // stat on every single download.
+    const present = await fs.promises
+      .access(abs)
+      .then(() => true)
+      .catch(() => false);
+    if (!present) {
       return res.status(404).json({ error: 'The file is no longer available' });
     }
 

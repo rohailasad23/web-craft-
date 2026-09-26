@@ -227,6 +227,21 @@ async function seed() {
   const backend = await connectDB();
   console.log(`🗄  Database backend: ${backend}`);
 
+  // Seeding is destructive by design: it drops every template, download,
+  // favourite, report, notification and audit row, then writes well-known
+  // accounts. That is right for the local development database -- but
+  // connectDB() prefers MONGODB_URI whenever it is reachable, so an accidental
+  // `npm run seed` can reach a shared cluster and wipe it in one command.
+  if (backend === 'atlas' && process.env.SEED_FORCE !== 'yes') {
+    console.error('❌ Refusing to seed a remote database.');
+    console.error('   `npm run seed` deletes all templates, downloads, favorites, reports,');
+    console.error('   notifications and audit entries, then recreates fixed accounts.');
+    console.error('   Use DB_MODE=local for the development database, or set SEED_FORCE=yes');
+    console.error('   if you really intend to overwrite the remote one.');
+    await disconnectDB();
+    process.exit(1);
+  }
+
   // Start from a known state so re-running never doubles the data. Favorites
   // go too: every template below is about to be recreated with a new id, and
   // leaving rows behind would orphan them. Reports, notifications and audit
@@ -246,9 +261,12 @@ async function seed() {
   const dev = await User.create(SEED_USER);
   const browser = await User.create(SEED_BROWSERS);
   const admin = await User.create(SEED_ADMIN);
-  console.log(`👤 Developer: ${SEED_USER.email}  (password: ${SEED_USER.passwordHash})`);
-  console.log(`👤 User:      ${SEED_BROWSERS.email}  (password: ${SEED_BROWSERS.passwordHash})`);
-  console.log(`👤 Admin:     ${SEED_ADMIN.email}  (password: ${SEED_ADMIN.passwordHash})`);
+  // Spec §35: credentials are documentation, not log output. They belong in
+  // the README, where they can be read on purpose -- not in CI output or a
+  // terminal scrollback that gets pasted into an issue.
+  console.log(`👤 Developer: ${SEED_USER.email}  (password in README.md, "Seeded logins")`);
+  console.log(`👤 User:      ${SEED_BROWSERS.email}  (password in README.md, "Seeded logins")`);
+  console.log(`👤 Admin:     ${SEED_ADMIN.email}  (password in README.md, "Seeded logins")`);
 
   const docs = [];
   for (const [title, category, technologies, description, tags] of SEED_TEMPLATES) {

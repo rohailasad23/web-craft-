@@ -337,7 +337,16 @@ async function run() {
       check('authorName denormalised onto the document', templateA.authorName === `Smoke Developer ${STAMP}`);
       check('thumbnail stored as a URL reference, not bytes', String(templateA.thumbnail || '').startsWith('/uploads/thumbnails/'));
       check('screenshots saved', (templateA.screenshots || []).length === 2);
-      check('archive stored as a key reference', typeof templateA.file?.key === 'string');
+      // Still a reference, never bytes -- and now the storage key itself stays
+      // off the wire too, because a bare key plus a public /uploads mount would
+      // hand anyone the archive without ever touching the download route.
+      check(
+        'archive is a reference and its storage key is not exposed (§20)',
+        typeof templateA.file?.filename === 'string' &&
+          typeof templateA.file?.size === 'number' &&
+          templateA.file.key === undefined,
+        JSON.stringify(templateA.file)
+      );
       check('technologies kept as given (free-form allowed)', templateA.technologies.includes('Tailwind CSS'));
       check(
         'tags are lowercased and de-duped (§2)',
@@ -346,6 +355,19 @@ async function run() {
       );
       check('status auto-approved for V1', templateA.status === 'approved');
       check('downloadCount starts at zero', templateA.downloadCount === 0);
+
+      // Cards must still render anonymously...
+      const thumb = await req('GET', String(templateA.thumbnail || ''));
+      check('thumbnails are served publicly (§29)', thumb.res.ok, `status=${thumb.res.status}`);
+      // ...but the archive must not be fetchable from disk. The whole point of
+      // POST /:slug/download is that it checks the session and counts the
+      // download; a static mount on uploads/templates would skip both.
+      const archive = await req('GET', '/uploads/templates/smoke-anything.zip');
+      check(
+        'archives are never served statically (§20)',
+        archive.res.status === 404,
+        `status=${archive.res.status}`
+      );
     }
   }
 
@@ -409,6 +431,33 @@ async function run() {
     badUrl.set('file', new Blob([ZIP], { type: 'application/zip' }), 'x.zip');
     const r5 = await req('POST', '/api/templates', { token: devToken, body: badUrl });
     check('javascript: preview URL rejected -> 400', r5.res.status === 400, `got ${r5.res.status}`);
+
+    // §20 asks for an extension allowlist, and it has to be checked too: the
+    // MIME type is only what the client claims about its own bytes, and an
+    // <input accept="image/png"> will happily carry phish.html -- which would
+    // then be stored and served from our origin.
+    const fakeImage = new FormData();
+    fakeImage.set('title', 'Wrong image extension');
+    fakeImage.set('description', 'An image-shaped upload whose filename says otherwise.');
+    fakeImage.set('category', 'Blog');
+    fakeImage.set('technologies', 'React');
+    fakeImage.set('file', new Blob([ZIP], { type: 'application/zip' }), 'x.zip');
+    fakeImage.set('thumbnail', new Blob([PNG], { type: 'image/png' }), 'phish.html');
+    const r6 = await req('POST', '/api/templates', { token: devToken, body: fakeImage });
+    check(
+      'image with a non-image extension -> 400 (§20)',
+      r6.res.status === 400 && /image|png|jpeg|gif|webp/i.test(r6.data.error || ''),
+      `got ${r6.res.status} ${r6.data.error}`
+    );
+    const svgImage = new FormData();
+    svgImage.set('title', 'SVG thumbnail');
+    svgImage.set('description', 'SVG is excluded from uploads because it can carry script.');
+    svgImage.set('category', 'Blog');
+    svgImage.set('technologies', 'React');
+    svgImage.set('file', new Blob([ZIP], { type: 'application/zip' }), 'x.zip');
+    svgImage.set('thumbnail', new Blob([PNG], { type: 'image/svg+xml' }), 'x.svg');
+    const r7 = await req('POST', '/api/templates', { token: devToken, body: svgImage });
+    check('SVG thumbnail -> 400', r7.res.status === 400, `got ${r7.res.status}`);
   }
 
   /* ---------------------------------------------------- listing + search */
@@ -479,7 +528,14 @@ async function run() {
   {
     const { res, data } = await req('GET', `/api/templates/${templateA.slug}`);
     check('GET /api/templates/:slug -> 200', res.ok);
-    check('details include author + file reference', !!data.template?.author && !!data.template?.file?.key);
+    // The archive is still described (so the page can show its name and size)
+    // but the storage key that would address it stays off the wire -- §20.
+    check(
+      'details include author + a file description, without the storage key (§20)',
+      !!data.template?.author &&
+        typeof data.template?.file?.filename === 'string' &&
+        data.template.file.key === undefined
+    );
     check('author is populated for the profile link', !!data.template?.author?._id && String(data.template?.author?.name).startsWith('Smoke Developer'));
     check('canEdit is false for an anonymous visitor', data.canEdit === false);
 

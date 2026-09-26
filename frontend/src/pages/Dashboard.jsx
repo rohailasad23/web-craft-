@@ -28,8 +28,8 @@ export default function Dashboard() {
     setError('');
 
     Promise.all([
-      api.get('/api/users/me/downloads'),
-      api.get('/api/users/me/favorites'),
+      api.get('/api/users/me/downloads?limit=6'),
+      api.get('/api/users/me/favorites?limit=4'),
       isDeveloper ? api.get('/api/templates/mine') : Promise.resolve({ data: { templates: [] } }),
     ])
       .then(([dl, fav, mine]) => {

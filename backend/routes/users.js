@@ -136,14 +136,19 @@ router.put(
 /**
  * GET /api/users/me/downloads -- "My Downloads" (spec §5).
  * Distinct templates only, because Download has a unique (user, template) index.
+ *
+ * `?limit=N` narrows the rows without touching `total`, which is counted
+ * separately -- the Dashboard only ever shows six, so it should not pay for
+ * sixty populated templates to get them.
  */
 router.get(
   '/me/downloads',
   asyncHandler(async (req, res) => {
+    const limit = Math.min(60, Math.max(1, parseInt(req.query.limit, 10) || 60));
     const [rows, total] = await Promise.all([
       Download.find({ userId: req.user.id })
         .sort({ downloadedAt: -1 })
-        .limit(60)
+        .limit(limit)
         .populate({
           path: 'templateId',
           select: 'title slug thumbnail category technologies downloadCount author authorName',
@@ -178,9 +183,13 @@ router.get(
 router.get(
   '/me/favorites',
   asyncHandler(async (req, res) => {
+    // A limit at the cap returns the whole list, so the length still *is* the
+    // total; only a genuine summary request (one that truncates) suppresses it.
+    const limit = Math.min(120, Math.max(1, parseInt(req.query.limit, 10) || 120));
+    const wantsSummary = req.query.limit !== undefined && limit < 120;
     const rows = await Favorite.find({ userId: req.user.id })
       .sort({ savedAt: -1 })
-      .limit(120)
+      .limit(limit)
       .populate({
         path: 'templateId',
         select:
@@ -201,7 +210,16 @@ router.get(
         savedAt: r.savedAt,
       }));
 
-    res.json({ success: true, total: templates.length, templates });
+    res.json({
+      success: true,
+      // `templates.length` is the total only when everything was returned.
+      // A caller asking for a summary (the Dashboard shows four cards) is
+      // explicitly asking for a page, and reporting its size as the total
+      // would show "All 4 saved". `null` means "not counted here", and the
+      // Dashboard already falls back to a link with no number on it.
+      total: wantsSummary ? null : templates.length,
+      templates,
+    });
   })
 );
 

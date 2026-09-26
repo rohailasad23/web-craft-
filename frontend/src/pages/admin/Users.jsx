@@ -270,7 +270,7 @@ export default function AdminUsers() {
       </div>
 
       {!loading && (
-        <p className="mt-4 text-xs text-ink-400">
+        <p className="mt-4 text-xs text-ink-500">
           {rows.length} of {list.length} account{list.length === 1 ? '' : 's'} shown
         </p>
       )}

@@ -114,18 +114,56 @@ const templateSchema = new mongoose.Schema(
 // regex over title/description (routes/templates.js). Regex can't use a normal
 // index for substring matching -- acceptable here, and far better UX than
 // $text, which cannot match a partial word like "port" -> "Portfolio".
+//
+// Every catalogue query starts from `{ status: 'approved' }` and then sorts on
+// a spec §3 key, so `status` leads each sort index and the sort fields follow
+// it in the same object. They used to be written the other way round -- or
+// stop short of the sort's secondary key -- which left four of the five sort
+// options unable to use an index and fall back to a blocking in-memory sort
+// over every matching document.
 templateSchema.index({ slug: 1 }, { unique: true });
-templateSchema.index({ status: 1, createdAt: -1 });
-templateSchema.index({ category: 1, status: 1 });
-templateSchema.index({ technologies: 1, status: 1 });
+templateSchema.index({ status: 1, createdAt: -1 }); // "Latest" + moderation queue
+templateSchema.index({ status: 1, favoriteCount: -1, downloadCount: -1, createdAt: -1 }); // "Most popular"
+templateSchema.index({ status: 1, downloadCount: -1, createdAt: -1 }); // "Most downloaded" + admin top
+templateSchema.index({ status: 1, updatedAt: -1, createdAt: -1 }); // "Recently updated" + §5 marker
+templateSchema.index({ status: 1, title: 1 }); // "A-Z"
+
+// Filter chips (spec §2) narrow status first. { status, tags } also lets
+// GET /api/meta read the tag bar from the index instead of walking every
+// approved document with distinct().
+templateSchema.index({ status: 1, category: 1 });
+templateSchema.index({ status: 1, technologies: 1 });
+templateSchema.index({ status: 1, tags: 1 });
+
+// Per-developer reads: /mine is newest-first across every status, while the
+// public profile (spec §10) and the dashboard are most-downloaded-first.
 templateSchema.index({ author: 1, createdAt: -1 });
-templateSchema.index({ downloadCount: -1 });
-templateSchema.index({ featured: 1, downloadCount: -1 });
-templateSchema.index({ tags: 1, status: 1 });
-templateSchema.index({ favoriteCount: -1, downloadCount: -1 });
-// Spec §3 "Recently updated" sorts on updatedAt, and §5's "updated recently"
-// marker reads the same field -- both are index-backed, like every other sort.
-templateSchema.index({ updatedAt: -1, status: 1 });
+templateSchema.index({ author: 1, downloadCount: -1, createdAt: -1 });
+
+// Featured shelf on the home page (spec §3): { status, featured } narrow, then
+// downloadCount orders the four cards it shows.
+templateSchema.index({ status: 1, featured: 1, downloadCount: -1 });
+
+/**
+ * Keep the storage key off the wire.
+ *
+ * `file.key` ("templates/mugtnsig-resume-one.zip") is only meaningful to
+ * someone with direct read access to the uploads directory -- and server.js
+ * deliberately does not serve that directory, because the archive must go
+ * through POST /:slug/download, which checks the session and records the
+ * download first. Dropping the key here covers every response shape at once
+ * (list, detail, create, update, admin), so a future route cannot re-open the
+ * hole, and a later swap to a public object store cannot turn a leaked key
+ * into anonymous archive access. Server-side code reads `doc.file.key`
+ * directly, which is unaffected: transforms only apply to toObject/toJSON.
+ */
+function hideStorageKey(doc, ret) {
+  if (ret && ret.file) delete ret.file.key;
+  return ret;
+}
+
+templateSchema.set('toObject', { transform: hideStorageKey });
+templateSchema.set('toJSON', { transform: hideStorageKey });
 
 module.exports = mongoose.model('Template', templateSchema);
 module.exports.STATUSES = STATUSES;

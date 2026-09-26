@@ -116,7 +116,7 @@ export default function AdminAudit() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-bold text-ink-900">{label.text}</span>
-                      <span className="text-xs text-ink-400" title={formatDate(e.createdAt)}>
+                      <span className="text-xs text-ink-500" title={formatDate(e.createdAt)}>
                         {timeAgo(e.createdAt)}
                       </span>
                     </div>
@@ -128,7 +128,7 @@ export default function AdminAudit() {
                       <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
                         {Object.entries(e.metadata).map(([k, v]) => (
                           <div key={k} className="flex gap-1.5">
-                            <dt className="text-ink-400">{k}</dt>
+                            <dt className="text-ink-500">{k}</dt>
                             <dd className="font-semibold text-ink-700">{String(v)}</dd>
                           </div>
                         ))}
@@ -143,7 +143,7 @@ export default function AdminAudit() {
       </div>
 
       {!loading && (
-        <p className="mt-4 text-xs text-ink-400">
+        <p className="mt-4 text-xs text-ink-500">
           Showing the latest {list.length} entr{list.length === 1 ? 'y' : 'ies'}. Passwords and
           other secrets are never written to this log.
         </p>

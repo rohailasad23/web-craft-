@@ -21,7 +21,19 @@ requireSecret('JWT_SECRET');
 
 const app = express();
 
-app.set('trust proxy', 1); // correct client IPs (and rate limits) behind a proxy
+// Rate limiting keys on req.ip. With `1` and no proxy actually in front, the
+// rightmost X-Forwarded-For entry is read from the request itself, so any
+// client could rotate it and reset its own window -- unlimited password
+// guessing on /api/auth/login. So this is off unless a proxy is really there.
+// Set TRUST_PROXY=1 (or =loopback, =<ips>) when deploying behind one.
+const trustProxyEnv = String(process.env.TRUST_PROXY || '').trim();
+function parseTrustProxy(raw) {
+  if (!raw || raw === 'false') return false;
+  if (raw === 'true') return true;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw; // 'loopback', 'uniquelocal', a CIDR list -- handled by proxy-addr
+}
+app.set('trust proxy', parseTrustProxy(trustProxyEnv));
 
 // ===== SECURITY HEADERS =====
 app.use(
@@ -40,14 +52,18 @@ const configuredOrigins = (process.env.CORS_ORIGINS || '')
   .map((o) => o.trim())
   .filter(Boolean);
 
+// CORS_ORIGINS wins when it is set. When it is not, fall back to the dev
+// origins above rather than to "anything": the empty-list case is the
+// documented dev default, and silently allowing every origin there meant the
+// intended list below was dead code and any website could read API responses.
 const allowOrigin = (origin, callback) => {
   if (!origin) return callback(null, true); // server-to-server / curl
-  if (!configuredOrigins.length) return callback(null, true); // not restricted
-  callback(null, configuredOrigins.includes(origin));
+  const list = configuredOrigins.length ? configuredOrigins : defaultOrigins;
+  callback(null, list.includes(origin));
 };
 
 if (process.env.NODE_ENV === 'production' && !configuredOrigins.length) {
-  console.warn('⚠️  CORS_ORIGINS is not set -- allowing requests from any origin.');
+  console.warn('⚠️  CORS_ORIGINS is not set -- falling back to the dev origins.');
 }
 
 // PATCH is load-bearing: moderation decisions (§8/§14), account status (§9)
@@ -83,9 +99,35 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts, please try again in 15 minutes' },
 });
 
+// Spec §21 wants the sensitive endpoints covered individually, not only by the
+// blanket 300/15-min. The two below write to disk, so they are also an
+// unauthenticated bandwidth/disk amplifier worth their own budget.
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many uploads, please try again in 15 minutes' },
+});
+
+const reportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many reports, please try again in 15 minutes' },
+});
+
 app.use('/api', apiLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+// A stolen token can be used to grind the current password here, so it gets
+// the same budget as login rather than the generic one.
+app.use('/api/auth/change-password', authLimiter);
+// Mounted with the method, not the path: GET /api/templates is the whole
+// catalogue and must never be throttled at 15 requests.
+app.post('/api/templates', uploadLimiter);
+app.post('/api/templates/:id/report', reportLimiter);
 
 // ===== DATABASE =====
 mongoose.connection.on('error', (err) => console.error('❌ MongoDB error:', err.message));
@@ -104,28 +146,42 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/notifications', require('./routes/notifications'));
 
 // ===== UPLOADED FILES =====
-// Thumbnails are public so cards render without a token; template archives are
-// NOT served from here -- they go through POST /api/templates/:slug/download,
-// which checks the session and records the download first.
+// Only the image directories are public, so cards render without a token.
+//
+// Template archives are deliberately NOT mounted: mounting UPLOAD_ROOT would
+// serve /uploads/templates/<key>.zip straight from disk, letting anyone fetch
+// a full archive anonymously -- skipping the login gate and downloadCount on
+// POST /api/templates/:slug/download, and even retrieving the archive of a
+// pending or rejected template that GET /api/templates/:slug refuses to
+// describe at all. They go through that download route, which checks the
+// session and records the download first.
+const { FIELD_DIRS } = require('./middleware/upload');
+const PUBLIC_UPLOAD_DIRS = storage.SUBDIRS.filter((dir) => dir !== FIELD_DIRS.file);
+
 storage.ensureStorage();
-app.use(
-  '/uploads',
-  express.static(storage.UPLOAD_ROOT, {
-    index: false,
-    dotfiles: 'deny',
-    maxAge: '7d',
-    setHeaders(res) {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      // Defense in depth: nothing that lives in uploads/ may ever execute a
-      // script, even if a malformed file somehow reached disk.
-      res.setHeader(
-        'Content-Security-Policy',
-        "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox"
-      );
-      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    },
-  })
-);
+
+const publicUploadOptions = {
+  index: false,
+  dotfiles: 'deny',
+  maxAge: '7d',
+  setHeaders(res) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    // Defense in depth: nothing that lives in uploads/ may ever execute a
+    // script, even if a malformed file somehow reached disk.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox"
+    );
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  },
+};
+
+PUBLIC_UPLOAD_DIRS.forEach((dir) => {
+  app.use(
+    `/uploads/${dir}`,
+    express.static(path.join(storage.UPLOAD_ROOT, dir), publicUploadOptions)
+  );
+});
 
 // ===== HEALTH CHECK =====
 app.get('/health', (req, res) => {

@@ -3,6 +3,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const asyncHandler = require('../middleware/asyncHandler');
+const { safeRegex } = require('../utils/safeRegex');
 const User = require('../models/User');
 const Template = require('../models/Template');
 
@@ -15,6 +16,11 @@ function publicDeveloper(user, stats = {}) {
     name: user.name,
     avatar: user.avatar || '',
     bio: user.bio || '',
+    // Deliberate, and reviewed: this endpoint only ever serves accounts with
+    // role developer/admin (the query filters on it), and the profile page
+    // renders the value as its "Admin"/"Developer" badge. What it can never
+    // contain is a plain account, an email, a status or anything internal --
+    // see publicUser() in routes/auth.js for the session shape.
     role: user.role,
     joinedAt: user.createdAt,
     templateCount: stats.templateCount || 0,
@@ -59,8 +65,10 @@ router.get(
 
     const query = { role: { $in: ['developer', 'admin'] } };
     if (q) {
-      const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      query.$or = [{ name: new RegExp(safe, 'i') }, { bio: new RegExp(safe, 'i') }];
+      // One escaped pattern shared by both fields. It used to be built twice
+      // from the same input -- same escape, same flags, two objects.
+      const rx = safeRegex(q, 60);
+      query.$or = [{ name: rx }, { bio: rx }];
     }
 
     const [users, total] = await Promise.all([
@@ -123,7 +131,11 @@ router.get(
     if (!user) return res.status(404).json({ error: 'Developer not found' });
 
     const templates = await Template.find({ author: user._id, status: 'approved' })
-      .sort({ downloadCount: -1, createdAt: -1 });
+      .sort({ downloadCount: -1, createdAt: -1 })
+      // Bounded like every other list endpoint: without this a long-standing
+      // developer returned their whole back catalogue in one response, no
+      // matter how many submissions they had.
+      .limit(200);
 
     res.json({ success: true, templates });
   })

@@ -182,7 +182,7 @@ export default function AdminReports() {
                         <span className={`ui-badge ${STATUS_CLS[r.status] || ''}`}>
                           {r.status}
                         </span>
-                        <span className="text-xs text-ink-400" title={formatDate(r.createdAt)}>
+                        <span className="text-xs text-ink-500" title={formatDate(r.createdAt)}>
                           {timeAgo(r.createdAt)}
                         </span>
                       </div>
@@ -193,12 +193,12 @@ export default function AdminReports() {
                           className="mt-2 block truncate text-sm font-bold text-ink-900 transition-colors hover:text-brand-700"
                         >
                           {template.title}
-                          <span className="ml-2 text-xs font-normal text-ink-400">
+                          <span className="ml-2 text-xs font-normal text-ink-500">
                             {template.status}
                           </span>
                         </Link>
                       ) : (
-                        <p className="mt-2 text-sm font-bold text-ink-400">
+                        <p className="mt-2 text-sm font-bold text-ink-500">
                           The reported template has since been deleted
                         </p>
                       )}
@@ -238,7 +238,7 @@ export default function AdminReports() {
       </div>
 
       {!loading && (
-        <p className="mt-4 text-xs text-ink-400">
+        <p className="mt-4 text-xs text-ink-500">
           Closing a report notifies the person who raised it. Reopening restores it to the pending
           queue without contacting anyone.
         </p>

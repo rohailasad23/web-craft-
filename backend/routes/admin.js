@@ -86,8 +86,18 @@ router.get(
   '/templates',
   asyncHandler(async (req, res) => {
     const status = STATUSES.includes(req.query.status) ? req.query.status : undefined;
-    const query = status ? { status } : {};
-    const templates = await Template.find(query).sort({ createdAt: -1 }).limit(200);
+    // With no filter this means "every status". Written as an explicit $in
+    // rather than `{}` so the { status, createdAt } index can both filter and
+    // order it -- `{}` left the sort with nothing to hang off, sorting the
+    // whole catalogue in memory to return 200 rows.
+    const query = status ? { status } : { status: { $in: STATUSES } };
+    const templates = await Template.find(query)
+      .sort({ createdAt: -1 })
+      .limit(200)
+      // The moderation table renders a thumbnail, a title, a badge and one line
+      // of metadata. The prose and version history it never shows were the bulk
+      // of every row, on a request capped at 200 rows.
+      .select('-description -changelog -file');
     res.json({ success: true, templates });
   })
 );
@@ -211,7 +221,12 @@ router.get(
   '/users',
   asyncHandler(async (req, res) => {
     const users = await User.find().sort({ createdAt: -1 }).limit(200).select('-passwordHash');
+    // Only the downloads of the accounts actually on screen. Grouping the whole
+    // Download collection cost a row per download ever written to answer for at
+    // most 200 of them.
+    const userIds = users.map((u) => u._id);
     const counts = await Download.aggregate([
+      { $match: { userId: { $in: userIds } } },
       { $group: { _id: '$userId', downloads: { $sum: 1 } } },
     ]);
     const byId = new Map(counts.map((c) => [String(c._id), c.downloads]));
@@ -344,8 +359,12 @@ router.get(
       .populate({ path: 'templateId', select: 'title slug status author' })
       .populate({ path: 'userId', select: 'name' });
 
-    const counts = {};
-    for (const s of Report.STATUSES) counts[s] = await Report.countDocuments({ status: s });
+    // Four counts for four tabs -- run together rather than one after another,
+    // which added four round trips to every load of the report queue.
+    const statusCounts = await Promise.all(
+      Report.STATUSES.map((s) => Report.countDocuments({ status: s }))
+    );
+    const counts = Object.fromEntries(Report.STATUSES.map((s, i) => [s, statusCounts[i]]));
 
     res.json({ success: true, reports, counts });
   })
