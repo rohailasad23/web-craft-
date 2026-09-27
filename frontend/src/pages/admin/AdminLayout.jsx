@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import Breadcrumbs from '../../components/Common/Breadcrumbs';
 import Footer from '../../components/Common/Footer';
 
@@ -7,7 +8,11 @@ const TABS = [
   { to: '/admin/templates', label: 'Templates' },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/reports', label: 'Reports' },
+  { to: '/admin/content', label: 'Content' },
+  { to: '/admin/queue', label: 'Queue' },
+  { to: '/admin/security', label: 'Security' },
   { to: '/admin/audit', label: 'Audit log' },
+  { to: '/admin/settings', label: 'Settings' },
 ];
 
 /**
@@ -24,18 +29,49 @@ const TABS = [
  * the security boundary (§8: the backend verifies role === admin).
  */
 export default function AdminLayout() {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+
+  // Spec §25: the panel's own search. It lives in the shell rather than any
+  // one page, so "where is that user?" is reachable from whatever screen the
+  // admin happens to be standing on -- and the URL stays shareable, because
+  // submitting navigates to /admin/search?q= instead of filtering in place.
+  const submitSearch = (event) => {
+    event.preventDefault();
+    const q = query.trim();
+    if (q.length < 2) return;
+    navigate(`/admin/search?q=${encodeURIComponent(q)}`);
+  };
+
   return (
     <div className="flex min-h-[70vh] flex-col">
       <main className="mx-auto w-full max-w-7xl flex-1 px-5 pb-16 pt-8 sm:px-6">
         <Breadcrumbs items={[{ label: 'Admin' }]} className="mb-4" />
 
-        <header className="animate-fade-up">
-          <span className="ui-eyebrow">Moderation</span>
-          <h1 className="ui-title mt-2 text-3xl sm:text-4xl">Admin</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-500">
-            Review submissions, answer reports, and keep an eye on the catalogue. Every action
-            here is written to the audit log.
-          </p>
+        <header className="animate-fade-up flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <span className="ui-eyebrow">Moderation</span>
+            <h1 className="ui-title mt-2 text-3xl sm:text-4xl">Admin</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-500">
+              Review submissions, answer reports, and keep an eye on the catalogue. Every action
+              here is written to the audit log.
+            </p>
+          </div>
+
+          <form onSubmit={submitSearch} role="search" className="w-full sm:w-72">
+            <label htmlFor="admin-search" className="sr-only">
+              Search templates, users, reports and the audit log
+            </label>
+            <input
+              id="admin-search"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search the panel…"
+              className="ui-input"
+              minLength={2}
+            />
+          </form>
         </header>
 
         <nav aria-label="Admin sections" className="mt-6 overflow-x-auto">

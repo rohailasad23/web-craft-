@@ -5,7 +5,9 @@ const jwt = require('jsonwebtoken');
 const asyncHandler = require('../middleware/asyncHandler');
 const verifyToken = require('../middleware/auth');
 const { requireActive } = require('../middleware/auth');
+const { getPlatform } = require('../middleware/platform');
 const { requireSecret } = require('../utils/secrets');
+const recordSecurityEvent = require('../services/securityEvent');
 const User = require('../models/User');
 
 const router = express.Router();
@@ -70,6 +72,23 @@ router.post(
     // so nobody can promote themselves by editing the request.
     const role = User.ASSIGNABLE_ROLES.includes(req.body.role) ? req.body.role : 'user';
 
+    // Spec §11: an admin can close the doors without a deploy. Both flags
+    // answer with their own clear message (never a silent downgrade to
+    // `user` -- someone applying as a developer deserves to be told).
+    const config = await getPlatform();
+    if (config.flags.registration === false) {
+      return res.status(403).json({
+        error: 'Registration is temporarily closed.',
+        code: 'FEATURE_DISABLED',
+      });
+    }
+    if (role === 'developer' && config.flags.developerRegistration === false) {
+      return res.status(403).json({
+        error: 'Developer accounts cannot be created right now.',
+        code: 'FEATURE_DISABLED',
+      });
+    }
+
     if (await User.findOne({ email })) {
       return res.status(409).json({ error: 'Email already registered' });
     }
@@ -104,10 +123,31 @@ router.post(
     // passwordHash is select:false, so opt in explicitly for the comparison.
     const user = await User.findOne({ email }).select('+passwordHash');
     // Same message for both cases: do not reveal which half was wrong.
-    if (!user) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!user) {
+      // Spec §9: a failed attempt against an unknown address is still worth
+      // knowing about (credential stuffing probes exactly this way). No
+      // password, no body -- just the attempted email and where from.
+      await recordSecurityEvent('login.failed', {
+        req,
+        severity: 'warning',
+        email,
+        meta: { known: false },
+      });
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
 
     const valid = await user.comparePassword(password);
-    if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+    if (!valid) {
+      await recordSecurityEvent('login.failed', {
+        req,
+        severity: 'warning',
+        actorId: user._id,
+        email,
+        roleAtEvent: user.role,
+        meta: { known: true },
+      });
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
 
     // Spec §9: a suspended account keeps its data but cannot sign in. Checked
     // AFTER the password so this cannot be used to fish for suspended
@@ -115,12 +155,30 @@ router.post(
     // correct, the account itself is what is refused. 401 would also be read
     // by the client as "wrong password", which is not what happened.
     if (user.status === 'suspended') {
+      await recordSecurityEvent('login.failed', {
+        req,
+        severity: 'warning',
+        actorId: user._id,
+        email,
+        roleAtEvent: user.role,
+        meta: { known: true, suspended: true },
+      });
       return res.status(403).json({
         error:
           'This account is suspended. Please contact support if you believe this is a mistake.',
         code: 'ACCOUNT_SUSPENDED',
       });
     }
+
+    // §10's login history is this row: who, when, success, and the device/IP
+    // captured at that moment. roleAtEvent makes "admin logins" a filter.
+    await recordSecurityEvent('login.success', {
+      req,
+      severity: 'info',
+      actorId: user._id,
+      email,
+      roleAtEvent: user.role,
+    });
 
     res.json({
       success: true,
@@ -180,6 +238,17 @@ router.post(
     // The schema's pre('save') hook re-hashes because passwordHash changed.
     user.passwordHash = next;
     await user.save();
+
+    // §9: credential changes are security events. The old and new passwords
+    // obviously stay out of it -- actor, time and "a password changed" is
+    // all this row says.
+    await recordSecurityEvent('password.changed', {
+      req,
+      severity: 'warning',
+      actorId: user._id,
+      email: user.email,
+      roleAtEvent: user.role,
+    });
 
     res.json({ success: true, message: 'Password updated' });
   })

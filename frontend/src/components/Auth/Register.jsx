@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
 import { useSeo } from '../../lib/seo';
+import { usePlatform, flagOff, flagMessage } from '../../lib/platform';
 
 const ROLE_OPTIONS = [
   { value: 'user', icon: '👤', title: 'Downloader' },
@@ -38,6 +39,17 @@ export default function Register({ onAuth }) {
   });
   const mounted = useRef(true);
 
+  // §11: registration can pause wholesale, or only developer sign-ups. Both
+  // sentences come from the API so this form and the server can never
+  // disagree about what is off.
+  const platform = usePlatform();
+  const registrationOff = flagOff(platform, 'registration');
+  const devOff = flagOff(platform, 'developerRegistration');
+  // Derived, not synced: if developer sign-ups are off, the form simply
+  // behaves as if "Downloader" had been picked -- no effect, no extra render,
+  // and a stale `developer` choice can never reach the submit handler.
+  const safeRole = devOff && role === 'developer' ? 'user' : role;
+
   // StrictMode mounts, unmounts and mounts again in dev, so the flag has
   // to be claimed on mount -- not only released on cleanup -- otherwise
   // the success redirect below would never fire.
@@ -71,7 +83,7 @@ export default function Register({ onAuth }) {
     setError('');
 
     try {
-      const res = await api.post('/api/auth/register', { ...form, role });
+      const res = await api.post('/api/auth/register', { ...form, role: safeRole });
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       onAuth?.(res.data.user, res.data.token);
@@ -88,6 +100,33 @@ export default function Register({ onAuth }) {
       setLoading(false);
     }
   };
+
+  // §11: registration paused means the form's whole purpose is gone, so the
+  // page says that in one sentence instead of shipping a form that can only
+  // fail. The shorter card still fits the no-scroll auth shell.
+  if (registrationOff) {
+    return (
+      <main className="h-[calc(100dvh_-_var(--nav-h))] overflow-y-auto overscroll-contain px-5 py-3 sm:px-6">
+        <div className="mx-auto flex min-h-full w-full max-w-md flex-col justify-center">
+          <div className="ui-card animate-fade-up p-6 text-center">
+            <span aria-hidden className="text-3xl">
+              ⏸
+            </span>
+            <h1 className="ui-title mt-3 text-xl sm:text-2xl">Registration is paused</h1>
+            <p className="mt-2 text-sm leading-relaxed text-ink-500">
+              {flagMessage(platform, 'registration')}
+            </p>
+            <p className="mt-5 text-xs leading-relaxed text-ink-500">
+              Already have an account?{' '}
+              <Link to="/login" className="font-semibold text-brand-700 hover:underline">
+                Sign in
+              </Link>
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   /* Same viewport-fit shell as Login: the column is exactly 100dvh minus the
      sticky navbar, so this page -- the taller of the two -- still never grows
@@ -122,17 +161,24 @@ export default function Register({ onAuth }) {
             <legend className="ui-label !mb-1">I want to join as…</legend>
             <div className="stagger grid grid-cols-2 gap-2.5">
               {ROLE_OPTIONS.map((option) => {
-                const active = role === option.value;
+                const active = safeRole === option.value;
+                const devDisabled = devOff && option.value === 'developer';
                 return (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => setRole(option.value)}
                     aria-pressed={active}
+                    disabled={devDisabled}
+                    title={devDisabled ? flagMessage(platform, 'developerRegistration') : undefined}
                     className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-left transition-all duration-300 ${
                       active
                         ? 'border-brand-600 bg-brand-50 shadow-soft'
                         : 'border-ink-200 bg-white hover:-translate-y-0.5 hover:border-brand-300'
+                    } ${
+                      devDisabled
+                        ? 'cursor-not-allowed opacity-50 hover:translate-y-0 hover:border-ink-200'
+                        : ''
                     }`}
                   >
                     <span aria-hidden className="text-base leading-none">
@@ -144,6 +190,13 @@ export default function Register({ onAuth }) {
                 );
               })}
             </div>
+            {/* Said out loud, not just shown greyed: a dead control that does
+                not explain itself is indistinguishable from a broken one. */}
+            {devOff && (
+              <p className="mt-1 text-[11px] leading-snug text-ink-500" role="status">
+                {flagMessage(platform, 'developerRegistration')}
+              </p>
+            )}
           </fieldset>
 
           {/* Two columns at every breakpoint: same layout on a phone and on a

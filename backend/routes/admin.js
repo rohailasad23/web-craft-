@@ -5,14 +5,19 @@ const mongoose = require('mongoose');
 const asyncHandler = require('../middleware/asyncHandler');
 const verifyToken = require('../middleware/auth');
 const { requireRole } = require('../middleware/auth');
+const record = require('../utils/audit');
+const recordSecurityEvent = require('../services/securityEvent');
+const trending = require('../services/trending');
 const User = require('../models/User');
 const Template = require('../models/Template');
 const Download = require('../models/Download');
 const Favorite = require('../models/Favorite');
 const Report = require('../models/Report');
 const AuditLog = require('../models/AuditLog');
+const SecurityEvent = require('../models/SecurityEvent');
 const notify = require('../services/notify');
 const { STATUSES } = require('../models/Template');
+const { PRIORITIES } = require('../models/Report');
 const storage = require('../services/storage');
 
 const router = express.Router();
@@ -22,41 +27,45 @@ const router = express.Router();
 // status (spec §9): a suspended admin cannot moderate.
 router.use(verifyToken, requireRole('admin'));
 
-/**
- * Spec §35: append one line to the audit log.
- *
- * Fire-and-forget for the same reason notifications are -- a moderator's
- * decision is already made, and losing the receipt because the log write
- * failed would turn a working action into a failed one. `metadata` carries
- * ids, names and statuses only; §35 is explicit that no password or other
- * sensitive value belongs here.
- */
-async function record(adminId, action, targetId, metadata = {}) {
-  if (!adminId || !action) return;
-  try {
-    await AuditLog.create({ adminId, action, targetId, metadata });
-  } catch (err) {
-    console.error('audit log not written:', err.message);
-  }
-}
-
 /** GET /api/admin/stats -- platform numbers for the admin overview. */
 router.get(
   '/stats',
   asyncHandler(async (req, res) => {
-    const [users, developers, templates, approved, pending, downloads, reports, suspended] =
-      await Promise.all([
-        User.countDocuments(),
-        User.countDocuments({ role: { $in: ['developer', 'admin'] } }),
-        Template.countDocuments(),
-        Template.countDocuments({ status: 'approved' }),
-        Template.countDocuments({ status: 'pending' }),
-        Download.countDocuments(),
-        // §14's "total reports" -- the OPEN ones, which is the number that
-        // tells a moderator whether there is work waiting.
-        Report.countDocuments({ status: 'pending' }),
-        User.countDocuments({ status: 'suspended' }),
-      ]);
+    const [
+      users,
+      developers,
+      templates,
+      approved,
+      pending,
+      downloads,
+      reports,
+      suspended,
+      flaggedContent,
+      flaggedUsers,
+      duplicates,
+      critical24h,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ role: { $in: ['developer', 'admin'] } }),
+      Template.countDocuments(),
+      Template.countDocuments({ status: 'approved' }),
+      Template.countDocuments({ status: 'pending' }),
+      Download.countDocuments(),
+      // §14's "total reports" -- the OPEN ones, which is the number that
+      // tells a moderator whether there is work waiting.
+      Report.countDocuments({ status: 'pending' }),
+      User.countDocuments({ status: 'suspended' }),
+      // §21's "Action Required" is built from work that genuinely exists --
+      // flagged content, uncleared duplicate warnings and critical security
+      // events are counted here so the dashboard never needs a second call.
+      Template.countDocuments({ 'content.state': 'flagged' }),
+      User.countDocuments({ 'content.state': 'flagged' }),
+      Template.countDocuments({ 'duplicateCheck.matches.0': { $exists: true }, 'duplicateCheck.reviewed': false }),
+      SecurityEvent.countDocuments({
+        severity: 'critical',
+        createdAt: { $gte: new Date(Date.now() - 24 * 3600 * 1000) },
+      }),
+    ]);
 
     const top = await Template.find({ status: 'approved' })
       .sort({ downloadCount: -1 })
@@ -75,6 +84,16 @@ router.get(
         uniqueDownloads: downloads,
         reports,
         suspended,
+      },
+      // §21: one number per kind of attention. Every figure is a real count
+      // of open work -- nothing here is simulated to make the panel look
+      // busy, and zero means "nothing needs you", not "not implemented".
+      actionRequired: {
+        templates: pending,
+        reports,
+        content: flaggedContent + flaggedUsers,
+        duplicates,
+        security: critical24h,
       },
       topTemplates: top,
     });
@@ -132,6 +151,10 @@ router.patch(
     // Nothing changed -> nothing to announce and nothing to log. Repeating
     // the same click should not fill the author's feed or the audit trail.
     if (previous !== status) {
+      // A moderation move can add or remove the template from the trending
+      // candidate list, so the cached answer must not outlive the decision.
+      trending.invalidate();
+
       const action =
         status === 'approved'
           ? 'template.approved'
@@ -178,6 +201,8 @@ router.delete(
     }
     const template = await Template.findByIdAndDelete(req.params.id);
     if (!template) return res.status(404).json({ error: 'Template not found' });
+    // The deleted row may be sitting in the cached trending candidate list.
+    trending.invalidate();
 
     // The owner's DELETE route already does this; the admin path must match,
     // otherwise a moderated deletion leaves favourite rows pointing at
@@ -242,6 +267,16 @@ router.get(
         status: u.status || 'active',
         createdAt: u.createdAt,
         downloads: byId.get(String(u._id)) || 0,
+        // §7's trust ladder, §4's spotlight state and §14's moderation flag
+        // -- the three judgements the Users screen now lets an admin see and
+        // change without leaving the row.
+        trustLevel: u.trustLevel || 'new',
+        spotlight: u.spotlight || { enabled: false },
+        contentState: u.content?.state || 'visible',
+        // The whole content sub-doc too (state + any override), so the Manage
+        // dialog can open on the truth -- "is an override active?" cannot be
+        // answered from the flattened state alone.
+        content: u.content || { state: 'visible' },
       })),
     });
   })
@@ -262,6 +297,11 @@ router.patch(
       return res.status(400).json({ error: `Role must be one of: ${User.ROLES.join(', ')}` });
     }
 
+    // Read the current role first: the security event below says what it
+    // CHANGED from, and a post-update read no longer knows that.
+    const existing = await User.findById(req.params.id).select('_id role').lean();
+    if (!existing) return res.status(404).json({ error: 'User not found' });
+
     const user = await User.findByIdAndUpdate(req.params.id, { role }, { returnDocument: 'after' });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -269,6 +309,20 @@ router.patch(
       userName: user.name,
       to: role,
     });
+
+    // §9: permission changes belong in the security log as well as the audit
+    // log -- "who granted this account admin?" has to sit next to the failed
+    // logins, which is where a reviewer already looks.
+    if (existing.role !== role) {
+      recordSecurityEvent('role.changed', {
+        req,
+        severity: 'warning',
+        actorId: req.user.id,
+        email: user.email,
+        roleAtEvent: req.user.role,
+        meta: { targetId: String(user._id), userName: user.name, from: existing.role, to: role },
+      });
+    }
     await notify({
       userId: user._id,
       type: 'account',
@@ -325,6 +379,18 @@ router.patch(
       to: status,
     });
 
+    // §9's "account status changes": who suspended this account, when, and
+    // which account it was -- beside the login events that will show the
+    // effect the very next time they try to sign in.
+    recordSecurityEvent(status === 'suspended' ? 'account.suspended' : 'account.unsuspended', {
+      req,
+      severity: 'warning',
+      actorId: req.user.id,
+      email: user.email,
+      roleAtEvent: req.user.role,
+      meta: { targetId: String(user._id), userName: user.name, from: previous, to: status },
+    });
+
     // The account owner needs to know why they suddenly cannot sign in.
     await notify({
       userId: user._id,
@@ -346,7 +412,9 @@ router.patch(
   })
 );
 
-/** GET /api/admin/reports?status=pending -- spec §7/§8: the report queue. */
+/**
+ * GET /api/admin/reports?status=pending -- spec §7/§8: the report queue.
+ */
 router.get(
   '/reports',
   asyncHandler(async (req, res) => {
@@ -371,8 +439,9 @@ router.get(
 );
 
 /**
- * PATCH /api/admin/reports/:id -- spec §7: move a report through its lifecycle.
- * Body: { status: 'pending' | 'reviewed' | 'resolved' | 'dismissed' }
+ * PATCH /api/admin/reports/:id -- spec §7: move a report through its lifecycle,
+ * and §20: let an admin re-rank it once they know more than the reason did.
+ * Body: { status?: one of STATUSES, priority?: one of PRIORITIES }
  */
 router.patch(
   '/reports/:id',
@@ -380,18 +449,65 @@ router.patch(
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(404).json({ error: 'Report not found' });
     }
-    const status = String(req.body.status || '');
-    if (!Report.STATUSES.includes(status)) {
+
+    const hasStatus = req.body.status !== undefined;
+    const hasPriority = req.body.priority !== undefined;
+    if (!hasStatus && !hasPriority) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+
+    const status = hasStatus ? String(req.body.status) : undefined;
+    if (hasStatus && !Report.STATUSES.includes(status)) {
       return res
         .status(400)
         .json({ error: `Status must be one of: ${Report.STATUSES.join(', ')}` });
     }
+    const priority = hasPriority ? String(req.body.priority) : undefined;
+    if (hasPriority && !PRIORITIES.includes(priority)) {
+      return res
+        .status(400)
+        .json({ error: `Priority must be one of: ${PRIORITIES.join(', ')}` });
+    }
 
-    const report = await Report.findById(req.params.id).select('_id status userId reason');
+    const report = await Report.findById(req.params.id).select(
+      '_id status priority userId reason'
+    );
     if (!report) return res.status(404).json({ error: 'Report not found' });
+
+    // Priority on its own is a re-rank, not a lifecycle move: it gets its own
+    // audit line and must not notify the reporter (nothing was decided).
+    // When both fields arrive, the priority change is applied first and the
+    // status logic below persists them together in one save.
+    let priorityFrom = null;
+    if (hasPriority && priority !== report.priority) {
+      priorityFrom = report.priority;
+      report.priority = priority;
+    }
+
+    if (!hasStatus) {
+      if (priorityFrom) {
+        await report.save();
+        record(req.user.id, 'report.priority', report._id, {
+          reason: report.reason,
+          from: priorityFrom,
+          to: priority,
+        });
+        return res.json({ success: true, message: `Priority set to ${priority}`, report, changed: true });
+      }
+      return res.json({ success: true, changed: false, report });
+    }
+
     const previous = report.status;
     report.status = status;
     await report.save();
+
+    if (priorityFrom) {
+      record(req.user.id, 'report.priority', report._id, {
+        reason: report.reason,
+        from: priorityFrom,
+        to: priority,
+      });
+    }
 
     if (previous !== status) {
       record(req.user.id, status === 'dismissed' ? 'report.dismissed' : 'report.resolved', report._id, {

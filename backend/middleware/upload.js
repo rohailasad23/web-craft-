@@ -5,6 +5,7 @@ const fs = require('fs');
 const multer = require('multer');
 const path = require('path');
 const { UPLOAD_ROOT } = require('../services/storage');
+const recordSecurityEvent = require('../services/securityEvent');
 
 /**
  * Multer config for template uploads (spec §6, §12, §13).
@@ -223,22 +224,60 @@ function handleUpload(req, res, next) {
       }
       if (problem) {
         discard(req.files || {});
+        // Spec §9: "unusual upload activity" is this exact moment -- bytes
+        // that claim to be a template but are not, or an image that is not an
+        // image. Logged before answering so a rejected probe still leaves a
+        // trail; the reply itself is unchanged.
+        recordSecurityEvent('upload.rejected', {
+          req,
+          severity: 'warning',
+          actorId: req.user?.id,
+          meta: { reason: problem.error },
+        });
         return res.status(problem.status).json({ error: problem.error });
       }
       return next();
     }
 
     if (err.code === 'LIMIT_FILE_SIZE') {
+      recordSecurityEvent('upload.rejected', {
+        req,
+        severity: 'warning',
+        actorId: req.user?.id,
+        meta: { reason: 'size limit' },
+      });
       return res.status(413).json({
         error: `File is too large (max ${Math.round(LIMITS.file / 1024 / 1024)}MB for archives, ${Math.round(LIMITS.image / 1024 / 1024)}MB for images)`,
       });
     }
     if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      recordSecurityEvent('upload.rejected', {
+        req,
+        severity: 'warning',
+        actorId: req.user?.id,
+        meta: { reason: 'unexpected field' },
+      });
       return res.status(400).json({ error: 'Unexpected file field' });
     }
     if (err.code === 'LIMIT_FILE_COUNT') {
+      recordSecurityEvent('upload.rejected', {
+        req,
+        severity: 'warning',
+        actorId: req.user?.id,
+        meta: { reason: 'too many files' },
+      });
       return res.status(400).json({ error: 'Too many files uploaded' });
     }
+    // The storage engine's own refusals land here: a non-.zip archive, an
+    // image whose extension is not on the allowlist, an SVG. Those are
+    // exactly §9's "unusual upload activity" (a browser does not send them
+    // by accident), so they leave the same trace as the magic-byte check.
+    recordSecurityEvent('upload.rejected', {
+      req,
+      severity: 'warning',
+      actorId: req.user?.id,
+      meta: { reason: err.code || 'rejected by storage engine' },
+    });
     return res.status(err.status || 400).json({ error: err.message || 'Upload failed' });
   });
 }

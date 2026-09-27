@@ -4,6 +4,7 @@ import api, { getErrorMessage } from '../../lib/api';
 import { formatDate, timeAgo } from '../../lib/format';
 import { useToast } from '../../components/Common/Toast';
 import { RowSkeleton } from '../../components/Common/Skeletons';
+import AdminNotes from '../../components/Admin/AdminNotes';
 
 const FILTERS = [
   { value: 'all', label: 'All' },
@@ -18,6 +19,17 @@ const STATUS_CLS = {
   reviewed: '!bg-sky-50 !text-sky-700',
   resolved: '!bg-emerald-50 !text-emerald-700',
   dismissed: '!bg-ink-100 !text-ink-600',
+};
+
+/* §20: priority is derived from the reason on submission, then re-rankable by
+   an admin who knows more than the reason did. These are its four rungs. */
+const PRIORITIES = ['critical', 'high', 'normal', 'low'];
+
+const PRIORITY_CLS = {
+  critical: '!bg-red-100 !text-red-700',
+  high: '!bg-amber-100 !text-amber-700',
+  normal: '!bg-ink-100 !text-ink-600',
+  low: '!bg-sky-50 !text-sky-600',
 };
 
 /** What a moderator can do from each state; anything already decided reopens. */
@@ -93,6 +105,71 @@ export default function AdminReports() {
       await load();
     } catch (err) {
       toast.error(getErrorMessage(err, 'That action failed'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /* ---------------------------------------- §17 notes + §18 watch + §20 */
+
+  // Notes expand in place: a report is reviewed where it sits, so pulling it
+  // into a dialog would only hide the queue it came from.
+  const [notesFor, setNotesFor] = useState(null);
+  const [watchIds, setWatchIds] = useState(() => new Set());
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .get('/api/admin/watchlist')
+      .then((res) => {
+        if (!alive) return;
+        setWatchIds(
+          new Set(
+            (res.data.items || [])
+              .filter((i) => i.targetType === 'report')
+              .map((i) => String(i.targetId))
+          )
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const setPriority = async (report, priority) => {
+    if (priority === report.priority) return;
+    setBusyId(report._id);
+    try {
+      const res = await api.patch(`/api/admin/reports/${report._id}`, { priority });
+      toast.success(res.data?.message || `Priority set to ${priority}`);
+      await load();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Could not change the priority'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleWatch = async (r) => {
+    setBusyId(r._id);
+    try {
+      const res = await api.post('/api/admin/watch', {
+        targetType: 'report',
+        targetId: r._id,
+        label: `${r.reason} — ${r.templateId?.title || 'deleted template'}`,
+        href: '/admin/reports',
+      });
+      const id = String(r._id);
+      setWatchIds((prev) => {
+        const next = new Set(prev);
+        if (res.data.watching) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      toast.success(res.data?.message || 'Watchlist updated');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Watchlist update failed'));
     } finally {
       setBusyId(null);
     }
@@ -182,6 +259,25 @@ export default function AdminReports() {
                         <span className={`ui-badge ${STATUS_CLS[r.status] || ''}`}>
                           {r.status}
                         </span>
+                        {/* §20: the label the API already assigned from the
+                            reason, re-rankable the moment a moderator knows
+                            more than the reason did. */}
+                        <select
+                          value={PRIORITIES.includes(r.priority) ? r.priority : 'normal'}
+                          onChange={(event) => setPriority(r, event.target.value)}
+                          disabled={busyId === r._id}
+                          aria-label="Report priority"
+                          title="Set from the report reason; an admin can re-rank it"
+                          className={`ui-input !w-auto !px-2 !py-0.5 !text-[11px] font-bold ${
+                            PRIORITY_CLS[r.priority] || PRIORITY_CLS.normal
+                          }`}
+                        >
+                          {PRIORITIES.map((p) => (
+                            <option key={p} value={p}>
+                              {p}
+                            </option>
+                          ))}
+                        </select>
                         <span className="text-xs text-ink-500" title={formatDate(r.createdAt)}>
                           {timeAgo(r.createdAt)}
                         </span>
@@ -228,8 +324,30 @@ export default function AdminReports() {
                           {a.label}
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        onClick={() => setNotesFor(notesFor === r._id ? null : r._id)}
+                        aria-expanded={notesFor === r._id}
+                        className="ui-btn ui-btn--ghost !px-3 !py-1.5 !text-xs"
+                      >
+                        {notesFor === r._id ? 'Hide notes' : 'Notes'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleWatch(r)}
+                        disabled={busyId === r._id}
+                        className="ui-btn ui-btn--soft !px-3 !py-1.5 !text-xs"
+                      >
+                        {watchIds.has(String(r._id)) ? '👁 Watching' : '👁 Watch'}
+                      </button>
                     </div>
                   </div>
+
+                  {notesFor === r._id && (
+                    <div className="mt-3 border-t border-ink-100 pt-3">
+                      <AdminNotes key={r._id} targetType="report" targetId={r._id} />
+                    </div>
+                  )}
                 </li>
               );
             })}

@@ -5,7 +5,20 @@ import { formatDate, formatCount } from '../../lib/format';
 import { useToast } from '../../components/Common/Toast';
 import { useConfirm } from '../../components/Common/ConfirmDialog';
 import { RowSkeleton } from '../../components/Common/Skeletons';
+import Modal from '../../components/Common/Modal';
+import AdminNotes from '../../components/Admin/AdminNotes';
 import { useSession } from '../../lib/session';
+
+/* §7's ladder and §14's states -- labels and badge colours for the enums
+   that live on the server (models/User.js). */
+const TRUST_LABELS = { new: 'New', active: 'Active', trusted: 'Trusted', verified: 'Verified' };
+const TRUST_STYLES = {
+  new: 'bg-ink-100 text-ink-600',
+  active: 'bg-brand-50 text-brand-700',
+  trusted: 'bg-amber-50 text-amber-700',
+  verified: 'bg-emerald-50 text-emerald-700',
+};
+const STATE_LABELS = { visible: 'Visible', flagged: 'Flagged', hidden: 'Hidden' };
 
 const ROLES = [
   { value: 'all', label: 'Everyone' },
@@ -139,6 +152,114 @@ export default function AdminUsers() {
 
   const list = users || [];
 
+  /* ------------------------------------------- manage dialog (§7/§14/§17) */
+
+  // Rows read from `list` (every save calls load()), form state is seeded on
+  // open -- same contract as the Templates dialog, see that file for why.
+  const [selectedId, setSelectedId] = useState(null);
+  const [bioForm, setBioForm] = useState('');
+  const [watchIds, setWatchIds] = useState(() => new Set());
+  const [modalBusy, setModalBusy] = useState(false);
+  const selected = list.find((u) => String(u.id) === String(selectedId)) || null;
+
+  // One watchlist request covers every row's button (§18).
+  useEffect(() => {
+    let alive = true;
+    api
+      .get('/api/admin/watchlist')
+      .then((res) => {
+        if (!alive) return;
+        setWatchIds(
+          new Set(
+            (res.data.items || [])
+              .filter((i) => i.targetType === 'user' || i.targetType === 'developer')
+              .map((i) => String(i.targetId))
+          )
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const openManage = (u) => {
+    setSelectedId(u.id);
+    setBioForm(u.content?.editedBio || '');
+  };
+
+  const closeManage = () => {
+    setSelectedId(null);
+    setBioForm('');
+  };
+
+  const patch = async (path, body, message) => {
+    setModalBusy(true);
+    try {
+      const res = await api.patch(path, body);
+      toast.success(message || res.data?.message || 'Saved');
+      await load();
+      return res.data;
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'That action failed'));
+      return null;
+    } finally {
+      setModalBusy(false);
+    }
+  };
+
+  const setTrust = (level) =>
+    patch(`/api/admin/users/${selected.id}/trust`, { trustLevel: level }, `Trust level: ${TRUST_LABELS[level]}`);
+
+  const setBioState = async (next) => {
+    if (next === 'hidden') {
+      const ok = await confirm({
+        title: 'Hide this bio?',
+        body: 'The profile text disappears from public pages and from search. The developer’s original bio is kept untouched — restoring later brings it back exactly as it was.',
+        confirmLabel: 'Hide it',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    patch(
+      `/api/admin/users/${selected.id}/content`,
+      { state: next },
+      `Bio marked as ${STATE_LABELS[next].toLowerCase()}`
+    );
+  };
+
+  const saveBio = () => {
+    const text = bioForm.trim();
+    patch(
+      `/api/admin/users/${selected.id}/content`,
+      { bio: text || null },
+      text ? 'Public bio overridden' : 'Original bio restored'
+    );
+  };
+
+  const restoreBio = () => patch(`/api/admin/users/${selected.id}/content`, { bio: null }, 'Original bio restored');
+
+  const toggleWatch = async () => {
+    try {
+      const res = await api.post('/api/admin/watch', {
+        targetType: selected.role === 'user' ? 'user' : 'developer',
+        targetId: selected.id,
+        label: selected.name,
+        href: selected.role === 'user' ? '/admin/users' : `/developers/${selected.id}`,
+      });
+      const id = String(selected.id);
+      setWatchIds((prev) => {
+        const next = new Set(prev);
+        if (res.data.watching) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+      toast.success(res.data?.message || 'Watchlist updated');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Watchlist update failed'));
+    }
+  };
+
   return (
     <div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -229,6 +350,26 @@ export default function AdminUsers() {
                       {self && (
                         <span className="ui-badge !bg-brand-100 !text-brand-700">you</span>
                       )}
+                      {/* §7/§14/§4 judgements at a glance; every one of them
+                          is set by a person in Manage, never auto-assigned. */}
+                      {u.trustLevel && u.trustLevel !== 'new' && (
+                        <span
+                          className={`ui-badge ${TRUST_STYLES[u.trustLevel] || TRUST_STYLES.new}`}
+                          title="Admin-set trust level"
+                        >
+                          {TRUST_LABELS[u.trustLevel] || u.trustLevel}
+                        </span>
+                      )}
+                      {u.contentState && u.contentState !== 'visible' && (
+                        <span className="ui-badge bg-red-50 text-red-600" title="Bio moderation state">
+                          {STATE_LABELS[u.contentState]}
+                        </span>
+                      )}
+                      {u.spotlight?.enabled && (
+                        <span className="ui-badge bg-purple-50 text-purple-700" title="On the homepage spotlight">
+                          ✦ Spotlight
+                        </span>
+                      )}
                     </div>
                     <p className="mt-0.5 truncate text-xs text-ink-500">
                       {u.email} · joined {formatDate(u.createdAt)} · ↓{' '}
@@ -261,6 +402,13 @@ export default function AdminUsers() {
                     >
                       {suspended ? 'Reinstate' : 'Suspend'}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => openManage(u)}
+                      className="ui-btn ui-btn--soft !px-3 !py-1.5 !text-xs"
+                    >
+                      Manage
+                    </button>
                   </div>
                 </li>
               );
@@ -274,6 +422,150 @@ export default function AdminUsers() {
           {rows.length} of {list.length} account{list.length === 1 ? '' : 's'} shown
         </p>
       )}
+
+      {/* §7 trust, §14 bio moderation, §17 notes, §18 watch -- the four
+          judgements an admin makes about a PERSON, in one place. */}
+      <Modal
+        open={!!selected}
+        onClose={closeManage}
+        title={selected ? `Manage ${selected.name}` : ''}
+        description="Trust, bio moderation and internal notes for this account. Every change lands in the audit log."
+        panelClassName="max-w-xl"
+      >
+        {selected && (
+          <div className="space-y-5">
+            <section aria-label="Trust level">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-ink-500">
+                  Trust level
+                </h4>
+                <span className="text-[11px] text-ink-400">Set by hand — never automatic</span>
+              </div>
+              <select
+                value={selected.trustLevel || 'new'}
+                onChange={(event) => setTrust(event.target.value)}
+                disabled={modalBusy}
+                className="ui-input mt-2 !w-auto !py-1.5 text-sm"
+              >
+                {Object.entries(TRUST_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs leading-relaxed text-ink-500">
+                Only “Trusted” and “Verified” ever appear publicly, beside the developer’s name.
+                A downgrade is recorded just like an upgrade.
+              </p>
+            </section>
+
+            <section aria-label="Bio moderation" className="border-t border-ink-100 pt-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-ink-500">
+                  Bio moderation
+                </h4>
+                <span className="text-[11px] text-ink-400">The original bio is never overwritten</span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <label className="text-xs font-semibold text-ink-600">
+                  State
+                  <select
+                    value={selected.contentState || 'visible'}
+                    onChange={(event) => setBioState(event.target.value)}
+                    disabled={modalBusy}
+                    className="ui-input mt-1 !w-auto !py-1.5 text-sm"
+                  >
+                    {Object.entries(STATE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-xs text-ink-500">
+                  {selected.contentState === 'visible'
+                    ? 'The bio shows on the public profile and in search.'
+                    : selected.contentState === 'flagged'
+                      ? 'Flagged: still visible, marked for review.'
+                      : 'Hidden: withheld from the profile and from search.'}
+                </p>
+              </div>
+
+              <label className="mt-3 block text-xs font-semibold text-ink-600">
+                Public bio override
+                <textarea
+                  value={bioForm}
+                  onChange={(event) => setBioForm(event.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Replacement text shown publicly instead of the developer’s original bio…"
+                  disabled={modalBusy}
+                  className="ui-input mt-1 resize-y text-sm"
+                />
+              </label>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                <span className="text-[11px] text-ink-500">
+                  {selected.content?.editedBio
+                    ? 'Override active — the stored original stays untouched.'
+                    : 'Showing the developer’s original bio.'}
+                </span>
+                <span className="flex gap-2">
+                  {selected.content?.editedBio && (
+                    <button
+                      type="button"
+                      onClick={restoreBio}
+                      disabled={modalBusy}
+                      className="ui-btn ui-btn--ghost !px-3 !py-1.5 !text-xs"
+                    >
+                      Restore original
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={saveBio}
+                    disabled={modalBusy || !bioForm.trim()}
+                    className="ui-btn ui-btn--soft !px-3 !py-1.5 !text-xs"
+                  >
+                    Save override
+                  </button>
+                </span>
+              </div>
+            </section>
+
+            <section aria-label="Internal notes" className="border-t border-ink-100 pt-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-ink-500">
+                  Internal notes
+                </h4>
+                <span className="text-[11px] text-ink-400">Admins only — never public</span>
+              </div>
+              <div className="mt-2">
+                <AdminNotes key={selected.id} targetType="user" targetId={selected.id} />
+              </div>
+            </section>
+
+            <section
+              aria-label="Watchlist"
+              className="flex flex-wrap items-center justify-between gap-3 border-t border-ink-100 pt-4"
+            >
+              <p className="text-xs text-ink-500">
+                {watchIds.has(String(selected.id))
+                  ? 'You are watching this account — it shows up in your watchlist.'
+                  : 'Track this account in your personal watchlist.'}
+              </p>
+              <button
+                type="button"
+                onClick={toggleWatch}
+                disabled={modalBusy}
+                className="ui-btn ui-btn--soft !px-4 !py-2 !text-xs"
+              >
+                {watchIds.has(String(selected.id)) ? '👁 Watching' : '👁 Watch'}
+              </button>
+            </section>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

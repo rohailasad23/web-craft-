@@ -4,6 +4,7 @@ import api, { getErrorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useFavorite } from '../lib/favorites';
 import usePresence from '../lib/usePresence';
+import { usePlatform, flagOff, flagMessage } from '../lib/platform';
 import { downloadTemplate } from '../lib/download';
 import { useToast } from '../components/Common/Toast';
 import ShareButton from '../components/Common/ShareButton';
@@ -22,6 +23,12 @@ export default function TemplateDetails() {
   const { slug } = useParams();
   const { isAuthenticated, user } = useSession();
   const toast = useToast();
+  // §11: a switched-off action greys out with the API's own reason instead of
+  // letting the click fail first. Unknown (config still loading) = enabled.
+  const platform = usePlatform();
+  const downloadsOff = flagOff(platform, 'downloads');
+  const favoritesOff = flagOff(platform, 'favorites');
+  const reportsOff = flagOff(platform, 'reports');
 
   const [template, setTemplate] = useState(null);
   // Spec §1: save control + spec §16/§30 share sit on this page too.
@@ -464,7 +471,7 @@ export default function TemplateDetails() {
                 <button
                   type="button"
                   onClick={handleDownload}
-                  disabled={phase === 'busy'}
+                  disabled={phase === 'busy' || downloadsOff}
                   aria-live="polite"
                   className={`ui-btn ui-btn--lg ui-btn--block !text-base ${
                     phase === 'done' ? 'ui-btn--success' : 'ui-btn--primary'
@@ -487,6 +494,14 @@ export default function TemplateDetails() {
                   </span>
                 </button>
 
+                {/* The server would refuse this anyway; saying so first is the
+                    §11 promise -- disabled features explain themselves. */}
+                {downloadsOff && (
+                  <p className="ui-alert ui-alert--warning !py-2 text-center text-xs" role="status">
+                    {flagMessage(platform, 'downloads')}
+                  </p>
+                )}
+
                 {!isAuthenticated && (
                   <p className="text-center text-xs text-ink-500">
                     You need to be signed in to download.{' '}
@@ -503,6 +518,8 @@ export default function TemplateDetails() {
                     type="button"
                     onClick={toggleFavorite}
                     aria-pressed={favorited}
+                    disabled={favoritesOff}
+                    title={favoritesOff ? flagMessage(platform, 'favorites') : undefined}
                     className={`ui-btn !px-2 ${favorited ? 'ui-btn--saved' : 'ui-btn--soft'}`}
                   >
                     <span
@@ -557,21 +574,27 @@ export default function TemplateDetails() {
               {/* Spec §7: reachable, but deliberately quieter than Download and
                   Save -- reporting is the exception, not the next step in the
                   happy path. Hidden from the owner, who can simply edit it. */}
-              {!canEdit && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isAuthenticated) {
-                      toast.info('Please log in to report this template.');
-                      return;
-                    }
-                    setReporting(true);
-                  }}
-                  className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
-                >
-                  <span aria-hidden>⚑</span> Report this template
-                </button>
-              )}
+              {!canEdit &&
+                (reportsOff ? (
+                  // No dead control: reporting switched off says so in place.
+                  <p className="mt-3 text-center text-xs text-ink-500" role="status">
+                    {flagMessage(platform, 'reports')}
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isAuthenticated) {
+                        toast.info('Please log in to report this template.');
+                        return;
+                      }
+                      setReporting(true);
+                    }}
+                    className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold text-ink-500 transition-colors hover:bg-red-50 hover:text-red-600"
+                  >
+                    <span aria-hidden>⚑</span> Report this template
+                  </button>
+                ))}
             </div>
 
             {canEdit && user?.role === 'admin' && (

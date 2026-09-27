@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../../lib/api';
 import { useCatalog } from '../../lib/catalog';
+import { usePlatform, flagOff, flagMessage } from '../../lib/platform';
 import { useToast } from '../../components/Common/Toast';
 import { mediaUrl, formatBytes } from '../../lib/format';
 import Footer from '../../components/Common/Footer';
@@ -51,6 +52,17 @@ export default function UploadTemplate() {
   const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [screenshots, setScreenshots] = useState([]);
   const [existingShots, setExistingShots] = useState([]);
+
+  // §11: submissions blocks the POST, uploads blocks only multipart writes
+  // (mirroring the server's gates) -- so a metadata-only edit still saves
+  // while file attachment explains itself instead of dying on a403.
+  const platform = usePlatform();
+  const submissionsOff = flagOff(platform, 'submissions');
+  const uploadsOff = flagOff(platform, 'uploads');
+  const creatingBlocked = !isEdit && (submissionsOff || uploadsOff);
+  const editFilesBlocked =
+    isEdit && uploadsOff && Boolean(archive || thumbnail || screenshots.length);
+  const submitBlocked = creatingBlocked || editFilesBlocked;
   const [customTech, setCustomTech] = useState('');
   const [tagDraft, setTagDraft] = useState('');
   const [saving, setSaving] = useState(false);
@@ -313,6 +325,24 @@ export default function UploadTemplate() {
               : 'Package your project as a .zip, add a thumbnail, and it will be listed in the public library.'}
           </p>
         </header>
+
+        {/* §11: the switch's own sentence, shown before anyone types a title
+            they could never submit. */}
+        {creatingBlocked && (
+          <div className="ui-alert ui-alert--warning mt-6" role="alert">
+            <span aria-hidden>⚠</span>
+            <span>{flagMessage(platform, submissionsOff ? 'submissions' : 'uploads')}</span>
+          </div>
+        )}
+        {editFilesBlocked && (
+          <div className="ui-alert ui-alert--warning mt-6" role="alert">
+            <span aria-hidden>⚠</span>
+            <span>
+              {flagMessage(platform, 'uploads')} You can still edit the text below — remove the
+              new files to save.
+            </span>
+          </div>
+        )}
 
         {error && (
           <div className="ui-alert ui-alert--error mt-6" role="alert">
@@ -778,7 +808,12 @@ export default function UploadTemplate() {
 
           {/* ------------------------------------------------ submit */}
           <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={saving} className="ui-btn ui-btn--primary !px-7 !py-3">
+            <button
+          type="submit"
+          disabled={saving || submitBlocked}
+          title={submitBlocked ? flagMessage(platform, 'submissions') : undefined}
+          className="ui-btn ui-btn--primary !px-7 !py-3"
+        >
               {saving ? (
                 <>
                   <span className="ui-spinner" aria-hidden /> {isEdit ? 'Saving…' : 'Publishing…'}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 
 import Home from './pages/Home';
 import Templates from './pages/Templates';
@@ -16,11 +16,15 @@ import ProtectedRoute from './components/Auth/ProtectedRoute';
 import Navbar from './components/Common/Navbar';
 import ErrorBoundary from './components/Common/ErrorBoundary';
 import SuspendedBanner from './components/Common/SuspendedBanner';
+import AnnouncementBanner from './components/Common/AnnouncementBanner';
+import MaintenanceWall from './components/Common/MaintenanceWall';
 import { ToastProvider } from './components/Common/Toast';
 import { ConfirmProvider } from './components/Common/ConfirmDialog';
 import { SessionContext } from './lib/session';
 import { loadCatalog } from './lib/catalog';
 import useScrollReveal from './lib/reveal';
+import PlatformProvider from './lib/platformProvider';
+import { usePlatform } from './lib/platform';
 import api, { setSuspendedSession } from './lib/api';
 
 import DeveloperDashboard from './pages/developer/Dashboard';
@@ -32,6 +36,11 @@ import AdminTemplates from './pages/admin/Templates';
 import AdminUsers from './pages/admin/Users';
 import AdminReports from './pages/admin/Reports';
 import AdminAudit from './pages/admin/Audit';
+import AdminContent from './pages/admin/Content';
+import AdminQueue from './pages/admin/Queue';
+import AdminSecurity from './pages/admin/Security';
+import AdminSettings from './pages/admin/Settings';
+import AdminSearch from './pages/admin/Search';
 import { NotFound, Forbidden, Unauthorized } from './pages/StatusPages';
 
 /** Read persisted session state; never trust that localStorage is valid. */
@@ -63,6 +72,15 @@ const ADMIN_ROLES = ['admin'];
  */
 function AppShell({ session, onLogin, onLogout, onRefresh }) {
   const location = useLocation();
+  const platform = usePlatform();
+
+  // Spec §12: maintenance is a WALL with one door. Admins keep the whole site
+  // (they need the panel to turn it off), everyone else gets the wall -- and
+  // only once config has actually loaded, so an unreachable /api/platform
+  // fails open to the normal site instead of locking visitors out on a guess.
+  const isAdmin = session.user?.role === 'admin';
+  const inMaintenance =
+    platform.loaded && platform.maintenance?.enabled === true && !isAdmin;
 
   // Fired by the shared axios client when the API rejects the token.
   useEffect(() => {
@@ -154,6 +172,27 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
     [session, onLogin, onLogout, onRefresh]
   );
 
+  // Spec §12: the wall renders instead of the site, not on top of it. Every
+  // path but /login collapses to the maintenance page, so a deep link or a
+  // stale bookmark cannot slip past it -- while the login endpoint stays open
+  // (that is the door an admin uses to turn the switch back off). All hooks
+  // have already run above; this is a rendering branch, not an early exit
+  // from the hook list.
+  if (inMaintenance) {
+    return (
+      <SessionContext.Provider value={contextValue}>
+        <div className="flex min-h-dvh flex-col overflow-clip bg-ink-50 font-sans text-ink-900 antialiased">
+          <div key={location.pathname} className="flex-1 animate-page-in">
+            <Routes>
+              <Route path="/login" element={<Login onAuth={onLogin} />} />
+              <Route path="*" element={<MaintenanceWall message={platform.maintenance?.message} />} />
+            </Routes>
+          </div>
+        </div>
+      </SessionContext.Provider>
+    );
+  }
+
   return (
     <SessionContext.Provider value={contextValue}>
       {/* `min-h-dvh` rather than `min-h-screen`: on mobile 100vh covers the
@@ -165,8 +204,26 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
           a scrollbar and shove the centred card sideways. It is not a scroll
           container, so the sticky navbar and sticky page rails still work. */}
       <div className="flex min-h-dvh flex-col overflow-clip bg-ink-50 font-sans text-ink-900 antialiased">
+        {/* Announcements sit above the navbar: visible before anything else
+            without hijacking a page someone is already reading (§13). */}
+        <AnnouncementBanner />
         <Navbar />
         {session.user?.status === 'suspended' && <SuspendedBanner />}
+        {/* Admins are never shown the wall, so they need the reminder that
+            their visitors still are -- otherwise the switch is forgotten. */}
+        {isAdmin && platform.maintenance?.enabled && (
+          <div className="ui-alert ui-alert--warning mx-auto mt-3 w-[calc(100%-2.5rem)] max-w-7xl" role="status">
+            <span aria-hidden="true">🔧</span>
+            <span>
+              Maintenance is on &mdash; visitors see the maintenance page. The panel stays open
+              for admins until you switch it off in{' '}
+              <Link to="/admin/settings" className="font-semibold underline">
+                Settings
+              </Link>
+              .
+            </span>
+          </div>
+        )}
         {/* Keyed on the path so every navigation replays a single, fast
             reveal (anim guide §11). Query-only changes -- filters,
             pagination -- deliberately do NOT remount, so the grid updates
@@ -265,6 +322,15 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
               <Route path="templates" element={<AdminTemplates />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="reports" element={<AdminReports />} />
+              <Route path="content" element={<AdminContent />} />
+              <Route path="queue" element={<AdminQueue />} />
+              <Route path="security" element={<AdminSecurity />} />
+              <Route path="search" element={<AdminSearch />} />
+              <Route path="settings" element={<AdminSettings />} />
+              {/* /admin/maintenance is the URL §12 refers to; it renders the
+                  same panel as Settings so the switch and the flags it
+                  governs can never drift into two divergent editors. */}
+              <Route path="maintenance" element={<AdminSettings />} />
               <Route path="audit" element={<AdminAudit />} />
             </Route>
 
@@ -316,7 +382,12 @@ export default function App() {
       <Router>
         <ToastProvider>
           <ConfirmProvider>
-            <AppShell session={session} onLogin={onLogin} onLogout={onLogout} onRefresh={onRefresh} />
+            {/* Outside SessionContext on purpose: the switchboard is fetched
+                for anonymous visitors too (maintenance wall, homepage
+                layout), long before anyone signs in. */}
+            <PlatformProvider>
+              <AppShell session={session} onLogin={onLogin} onLogout={onLogout} onRefresh={onRefresh} />
+            </PlatformProvider>
           </ConfirmProvider>
         </ToastProvider>
       </Router>

@@ -247,12 +247,17 @@ npm run smoke
 
 The smoke test spawns its own API on a scratch port against its own MongoDB
 (`web-craft-smoke`, port 27018) so it never touches your working data. It runs
-**238 checks** covering authentication and session handling, role protection,
+**339 checks** covering authentication and session handling, role protection,
 template upload and its validation (extension, MIME, size and the file's real
 byte signature), listing/search/pagination, downloads and de-duplication, saved
 templates, developer profiles and analytics, account settings and password
 changes, versioning and changelogs, reporting, admin moderation with its
 notifications and audit log, account suspension, CORS preflight, rate limiting
-and error handling.
+and error handling — plus the Platform Control & Trust layer: feature flags and
+the maintenance wall (with the admin bypass), config-driven homepage sections,
+featured/trending/spotlight curation, announcements, quality scoring (kept
+internal), trust levels, duplicate review, content moderation with its audit
+trail, the security event log, platform health, the action queue, report
+priorities, admin notes, the watchlist and admin search.
 
 It exits non-zero on any failure, so it can gate CI.

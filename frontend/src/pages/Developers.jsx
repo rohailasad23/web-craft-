@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { formatCount, initials } from '../lib/format';
 import { useSeo } from '../lib/seo';
+import { usePlatform, flagOff, flagMessage } from '../lib/platform';
 import Footer from '../components/Common/Footer';
 
 const PAGE_SIZE = 12;
@@ -68,7 +69,19 @@ export default function Developers() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // §11: when public profiles switch off, the API refuses every call on this
+  // page -- so don't fire them at all. The screen states the switch's own
+  // sentence instead of dressing a deliberate403 up as a broken site.
+  const platform = usePlatform();
+  const profilesOff = flagOff(platform, 'publicDeveloperProfiles');
+
   useEffect(() => {
+    if (profilesOff) {
+      setData(null);
+      setError('');
+      setLoading(false);
+      return undefined;
+    }
     let alive = true;
     setLoading(true);
     setError('');
@@ -82,7 +95,7 @@ export default function Developers() {
     return () => {
       alive = false;
     };
-  }, [q, page]);
+  }, [q, page, profilesOff]);
 
   // Called by the search box once it settles (its own debounce, so typing does
   // not re-render this component). A new query always restarts at page 1.
@@ -110,10 +123,20 @@ export default function Developers() {
           </p>
         </header>
 
-        <DeveloperSearch initial={q} onCommit={commit} />
+        {!profilesOff && <DeveloperSearch initial={q} onCommit={commit} />}
 
         <section className="mt-8" aria-label="Developers">
-          {loading && !data ? (
+          {profilesOff ? (
+            <div className="ui-card p-10 text-center">
+              <span className="text-4xl" aria-hidden>
+                ⏸
+              </span>
+              <h2 className="ui-title mt-4 text-xl">The directory is paused</h2>
+              <p className="mt-2 text-sm text-ink-500">
+                {flagMessage(platform, 'publicDeveloperProfiles')}
+              </p>
+            </div>
+          ) : loading && !data ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }, (_, i) => (
                 <div key={i} className="ui-card p-5">

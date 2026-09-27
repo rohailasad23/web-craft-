@@ -21,6 +21,39 @@ const STATUSES = ['pending', 'approved', 'rejected'];
 const LICENSES = ['', 'MIT', 'Apache 2.0', 'GPL', 'Personal Use', 'Other'];
 
 /**
+ * Spec §5: the admin's quality verdict, set by a person, never computed.
+ * 'unchecked' is the honest default -- §5 forbids claiming a template is
+ * verified without admin action or a real automated check.
+ */
+const QUALITY_STATUSES = ['unchecked', 'quality_checked', 'needs_improvement', 'verified'];
+
+/** §5's checklist keys. `ok` lives per row: unchecked boxes simply are absent. */
+const QUALITY_CHECKS = [
+  'responsive',
+  'working_demo',
+  'valid_download',
+  'clean_structure',
+  'documentation',
+  'technologies',
+  'no_suspicious_files',
+  'screenshots',
+  'license_info',
+];
+
+/**
+ * Spec §2: trending is driven by real activity, with a manual override for
+ * the cases an admin can see and a signal cannot ('auto' = normal rules).
+ */
+const TRENDING_OVERRIDES = ['auto', 'force', 'off'];
+
+/**
+ * Spec §14: content moderation state for this template's DESCRIPTION.
+ * 'flagged' is visible but marked for review; 'hidden' is withheld publicly
+ * (never deleted -- the original text stays, §14: restore must be possible).
+ */
+const CONTENT_STATES = ['visible', 'flagged', 'hidden'];
+
+/**
  * Spec §6: one entry per published update. Deliberately a flat list, not a
  * version tree -- the spec explicitly asks NOT to build a Git-like system
  * (§5). Newest first is the order the details page reads.
@@ -82,6 +115,10 @@ const templateSchema = new mongoose.Schema(
       filename: { type: String, default: '' },
       size: { type: Number, default: 0 },
       contentType: { type: String, default: 'application/zip' },
+      // Spec §8: sha256 of the archive, computed server-side at upload. It is
+      // what makes "same file hash" a fact instead of a guess -- two uploads
+      // with identical bytes match even when the title was reworded.
+      hash: { type: String, default: '', maxlength: 64, index: true },
     },
 
     // Template.author -> User._id (spec §18). authorName is a denormalised
@@ -105,7 +142,66 @@ const templateSchema = new mongoose.Schema(
     license: { type: String, enum: LICENSES, default: '' },
 
     status: { type: String, enum: STATUSES, default: 'approved' },
+
+    // Spec §1: an admin curates the homepage shelf; `featuredOrder` is the
+    // "featured priority" §1 asks for, so an admin decides the order instead
+    // of download count deciding for them.
     featured: { type: Boolean, default: false },
+    featuredOrder: { type: Number, default: 0 },
+
+    // Spec §2: 'auto' follows real activity, 'force' pins it in, 'off'
+    // excludes it. Never written by the trending calculation itself, so the
+    // admin's decision cannot be silently overwritten.
+    trendingOverride: { type: String, enum: TRENDING_OVERRIDES, default: 'auto' },
+
+    // Spec §5/§6: admin-entered verdict + optional 0-10 score. Internal by
+    // design -- public template responses strip this (utils/publicTemplate),
+    // because an unexposed score is the only kind that cannot look like a
+    // marketing claim.
+    quality: {
+      status: { type: String, enum: QUALITY_STATUSES, default: 'unchecked' },
+      score: { type: Number, min: 0, max: 10, default: null },
+      checks: {
+        type: [{ key: { type: String }, ok: { type: Boolean, default: false }, _id: false }],
+        default: [],
+      },
+      note: { type: String, trim: true, maxlength: 500, default: '' },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      reviewedAt: { type: Date, default: null },
+    },
+
+    // Spec §14: description moderation. The original `description` field is
+    // never rewritten by moderation; `editedDescription` is an admin override
+    // layered on top, so "restore" is clearing one field instead of digging
+    // through history.
+    content: {
+      state: { type: String, enum: CONTENT_STATES, default: 'visible' },
+      editedDescription: { type: String, maxlength: 4000, default: null },
+      editedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      editedAt: { type: Date, default: null },
+    },
+
+    // Spec §8: what the duplicate check found at upload time, plus an
+    // `reviewed` bit so an admin's "not a duplicate, keep it" decision stops
+    // it reappearing in the queue. Detection is advisory only -- §8: never
+    // auto-delete, the admin decides.
+    duplicateCheck: {
+      checkedAt: { type: Date, default: null },
+      matches: {
+        type: [
+          {
+            _id: false,
+            type: { type: String, enum: ['title', 'github', 'hash', 'author'] },
+            templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'Template' },
+            title: { type: String, default: '' },
+            reason: { type: String, default: '' },
+          },
+        ],
+        default: [],
+      },
+      reviewed: { type: Boolean, default: false },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    },
   },
   { timestamps: true }
 );
@@ -141,8 +237,8 @@ templateSchema.index({ author: 1, createdAt: -1 });
 templateSchema.index({ author: 1, downloadCount: -1, createdAt: -1 });
 
 // Featured shelf on the home page (spec §3): { status, featured } narrow, then
-// downloadCount orders the four cards it shows.
-templateSchema.index({ status: 1, featured: 1, downloadCount: -1 });
+// the admin's featuredOrder decides, with download count as the tie-break.
+templateSchema.index({ status: 1, featured: 1, featuredOrder: 1, downloadCount: -1 });
 
 /**
  * Keep the storage key off the wire.
@@ -169,3 +265,7 @@ module.exports = mongoose.model('Template', templateSchema);
 module.exports.STATUSES = STATUSES;
 module.exports.LICENSES = LICENSES;
 module.exports.slugify = slugify;
+module.exports.QUALITY_STATUSES = QUALITY_STATUSES;
+module.exports.QUALITY_CHECKS = QUALITY_CHECKS;
+module.exports.TRENDING_OVERRIDES = TRENDING_OVERRIDES;
+module.exports.CONTENT_STATES = CONTENT_STATES;

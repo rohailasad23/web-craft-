@@ -1234,6 +1234,586 @@ async function run() {
   }
 
   /* ------------------------------------------------------------- cleanup */
+  /* ------------------------------------- platform control & trust (§1-§24) */
+  // The admin's operational layer: curation, layout, trust, moderation,
+  // switches, maintenance, security log and health. Sits before Teardown
+  // because most of it works on the two templates that section removes.
+  section('PLATFORM CONTROL & TRUST');
+  const adminToken = global.__smokeAdminToken;
+  const rank = { critical: 4, high: 3, normal: 2, low: 1 };
+
+  // Reports first, so the queue arrives below with real priority spread.
+  {
+    // §7 already left pending reports on this same template (one per
+    // reporter, enforced by a unique index), and the slot only frees up once
+    // a moderator decides. Resolve the leftovers first so the two rows below
+    // are genuinely new submissions rather than 409s.
+    const old = await req('GET', '/api/admin/reports?status=pending', { token: adminToken });
+    for (const r of old.data.reports || []) {
+      if (String(r.templateId?._id ?? r.templateId) === String(templateB._id)) {
+        await req('PATCH', `/api/admin/reports/${r._id}`, { token: adminToken, body: { status: 'resolved' } });
+      }
+    }
+
+    const r1 = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: userToken,
+      body: { reason: 'Broken demo', description: 'The demo link errors out for me.' },
+    });
+    check('second report accepted (normal priority)', r1.res.status === 201, JSON.stringify(r1.data));
+    const r2 = await req('POST', `/api/templates/${templateB._id}/report`, {
+      token: devToken,
+      body: { reason: 'Malicious/suspicious content', description: 'This archive looks suspicious to me.' },
+    });
+    check(
+      'malicious report accepted and starts critical',
+      r2.res.status === 201 && r2.data.report?.status === 'pending',
+      JSON.stringify(r2.data)
+    );
+  }
+
+  {
+    // §1/§2 need both templates approved before the public curation checks
+    // mean anything. Idempotent: an already-approved row writes no audit line.
+    for (const t of [templateA, templateB]) {
+      await req('PATCH', `/api/admin/templates/${t._id}/status`, { token: adminToken, body: { status: 'approved' } });
+    }
+  }
+
+  /* §3 + §11 + §12: the public platform payload */
+  {
+    const { res, data } = await req('GET', '/api/platform');
+    check('GET /api/platform -> 200', res.ok);
+    check('payload carries every flag, all on', Object.keys(data.flags || {}).length >= 8 && data.flags.downloads === true, JSON.stringify(data.flags));
+    check('payload carries 7 homepage sections', (data.sections || []).length === 7, `got ${(data.sections || []).length}`);
+    const orders = (data.sections || []).map((s) => s.order);
+    check('sections arrive in order', orders.every((o, i) => i === 0 || o >= orders[i - 1]), JSON.stringify(orders));
+    check('maintenance starts disabled', data.maintenance?.enabled === false);
+    check('announcements and spotlight are arrays', Array.isArray(data.announcements) && Array.isArray(data.spotlight));
+  }
+
+  /* §3: homepage content control */
+  {
+    const forbidden = await req('GET', '/api/admin/content', { token: userToken });
+    check('non-admin cannot read admin content config', forbidden.res.status === 403);
+
+    const before = await req('GET', '/api/admin/content', { token: adminToken });
+    check('GET /api/admin/content -> 200', before.res.ok && (before.data.sections || []).length === 7);
+
+    const put = await req('PUT', '/api/admin/content/sections', {
+      token: adminToken,
+      body: {
+        sections: before.data.sections.map((s) =>
+          s.key === 'featured'
+            ? { ...s, title: 'Editor picks' }
+            : s.key === 'categories'
+              ? { ...s, enabled: false }
+              : s
+        ),
+      },
+    });
+    check('PUT sections -> updated', put.res.ok, JSON.stringify(put.data));
+
+    const after = await req('GET', '/api/platform');
+    const featuredSection = (after.data.sections || []).find((s) => s.key === 'featured');
+    const categoriesSection = (after.data.sections || []).find((s) => s.key === 'categories');
+    check('custom section title reaches the public payload', featuredSection?.title === 'Editor picks', featuredSection?.title);
+    check('disabled section is reported as disabled', categoriesSection?.enabled === false);
+
+    // Restore: an empty title means "use the built-in default" again.
+    const restore = await req('PUT', '/api/admin/content/sections', {
+      token: adminToken,
+      body: {
+        sections: before.data.sections.map((s) => ({ ...s, title: '', enabled: true })),
+      },
+    });
+    check('sections restored to defaults', restore.res.ok);
+    const clean = await req('GET', '/api/platform');
+    const restored = (clean.data.sections || []).find((s) => s.key === 'featured');
+    check('clearing the title brings back the default', restored?.title === 'Featured templates', restored?.title);
+  }
+
+  /* §1: featured templates + priority */
+  {
+    const forbidden = await req('PATCH', `/api/admin/templates/${templateA._id}/featured`, {
+      token: devToken,
+      body: { featured: true },
+    });
+    check('non-admin cannot feature a template', forbidden.res.status === 403);
+
+    const a = await req('PATCH', `/api/admin/templates/${templateA._id}/featured`, {
+      token: adminToken,
+      body: { featured: true, order: 1 },
+    });
+    const b = await req('PATCH', `/api/admin/templates/${templateB._id}/featured`, {
+      token: adminToken,
+      body: { featured: true, order: 2 },
+    });
+    check('admin features two templates', a.res.ok && b.res.ok, `${a.res.status} ${b.res.status}`);
+
+    const shelf = await req('GET', '/api/templates?featured=true&limit=4');
+    const slugs = (shelf.data.templates || []).map((t) => t.slug);
+    check(
+      'featured shelf returns both, in admin order',
+      slugs.length === 2 && slugs[0] === templateA.slug && slugs[1] === templateB.slug,
+      JSON.stringify(slugs)
+    );
+
+    const off = await req('PATCH', `/api/admin/templates/${templateB._id}/featured`, {
+      token: adminToken,
+      body: { featured: false },
+    });
+    const after = await req('GET', '/api/templates?featured=true&limit=4');
+    check(
+      'unfeaturing removes it from the shelf',
+      off.res.ok && (after.data.templates || []).every((t) => t.slug !== templateB.slug)
+    );
+  }
+
+  /* §2: trending from real activity + manual override */
+  {
+    const forced = await req('PATCH', `/api/admin/templates/${templateA._id}/trending`, {
+      token: adminToken,
+      body: { trendingOverride: 'force' },
+    });
+    check('admin can force a template into trending', forced.res.ok, JSON.stringify(forced.data));
+
+    const hot = await req('GET', '/api/templates?trending=true&limit=10');
+    check(
+      'forced template appears in trending despite no activity',
+      (hot.data.templates || []).some((t) => t.slug === templateA.slug),
+      JSON.stringify((hot.data.templates || []).map((t) => t.slug))
+    );
+
+    const off = await req('PATCH', `/api/admin/templates/${templateA._id}/trending`, {
+      token: adminToken,
+      body: { trendingOverride: 'off' },
+    });
+    const after = await req('GET', '/api/templates?trending=true&limit=10');
+    check(
+      'override "off" excludes it from trending',
+      off.res.ok && !(after.data.templates || []).some((t) => t.slug === templateA.slug)
+    );
+
+    const bad = await req('PATCH', `/api/admin/templates/${templateA._id}/trending`, {
+      token: adminToken,
+      body: { trendingOverride: 'invented' },
+    });
+    check('unknown override rejected', bad.res.status === 400);
+    await req('PATCH', `/api/admin/templates/${templateA._id}/trending`, {
+      token: adminToken,
+      body: { trendingOverride: 'auto' },
+    });
+  }
+
+  /* §4: developer spotlight */
+  {
+    const on = await req('PATCH', `/api/admin/users/${devUser.id}/spotlight`, {
+      token: adminToken,
+      body: { enabled: true, blurb: 'Builds thoughtful React interfaces.', priority: 1 },
+    });
+    check('admin enables spotlight', on.res.ok && on.data.spotlight?.enabled === true, JSON.stringify(on.data));
+
+    const payload = await req('GET', '/api/platform');
+    const picked = (payload.data.spotlight || []).find((s) => s.id === devUser.id);
+    check('spotlight developer reaches the homepage payload', !!picked, JSON.stringify(payload.data.spotlight));
+    check('spotlight carries the blurb', picked?.blurb === 'Builds thoughtful React interfaces.', picked?.blurb);
+
+    const off = await req('PATCH', `/api/admin/users/${devUser.id}/spotlight`, {
+      token: adminToken,
+      body: { enabled: false },
+    });
+    const after = await req('GET', '/api/platform');
+    check('disabled spotlight disappears', off.res.ok && !(after.data.spotlight || []).some((s) => s.id === devUser.id));
+  }
+
+  /* §13: announcements */
+  {
+    const created = await req('POST', '/api/admin/announcements', {
+      token: adminToken,
+      body: { title: `Smoke notice ${STAMP}`, message: 'A smoke-test announcement.', type: 'update' },
+    });
+    check('admin creates an announcement', created.res.status === 201, JSON.stringify(created.data));
+    const id = created.data.announcement?._id;
+
+    const live = await req('GET', '/api/platform');
+    check(
+      'active announcement is public',
+      (live.data.announcements || []).some((a) => a.id === id),
+      JSON.stringify(live.data.announcements)
+    );
+
+    await req('PATCH', `/api/admin/announcements/${id}`, { token: adminToken, body: { enabled: false } });
+    const hidden = await req('GET', '/api/platform');
+    check('disabled announcement is not public', !(hidden.data.announcements || []).some((a) => a.id === id));
+
+    const del = await req('DELETE', `/api/admin/announcements/${id}`, { token: adminToken });
+    check('admin deletes an announcement', del.res.ok);
+  }
+
+  /* §5 + §6: quality status and score, internal only */
+  {
+    const bad = await req('PATCH', `/api/admin/templates/${templateA._id}/quality`, {
+      token: adminToken,
+      body: { status: 'definitely_verified' },
+    });
+    check('unknown quality status rejected', bad.res.status === 400);
+
+    const q = await req('PATCH', `/api/admin/templates/${templateA._id}/quality`, {
+      token: adminToken,
+      body: {
+        status: 'verified',
+        score: 8.5,
+        checks: [
+          { key: 'responsive', ok: true },
+          { key: 'working_demo', ok: true },
+          { key: 'license_info', ok: false },
+        ],
+        note: 'Checked during the smoke run.',
+      },
+    });
+    check(
+      'quality verdict saved with score and checks',
+      q.res.ok && q.data.quality?.status === 'verified' && q.data.quality?.score === 8.5 && q.data.quality?.checks?.length === 3,
+      JSON.stringify(q.data.quality)
+    );
+
+    const publicList = await req('GET', '/api/templates?limit=12');
+    const rows = publicList.data.templates || [];
+    check(
+      'quality score never reaches the public catalogue',
+      rows.length > 0 && rows.every((t) => !('quality' in t)),
+      Object.keys(rows[0] || {}).join(',')
+    );
+
+    const mine = await req('GET', '/api/templates/mine', { token: devToken });
+    check(
+      'the owner cannot read their quality score either',
+      (mine.data.templates || []).every((t) => !('quality' in t))
+    );
+  }
+
+  /* §7: developer trust level */
+  {
+    const bad = await req('PATCH', `/api/admin/users/${devUser.id}/trust`, {
+      token: adminToken,
+      body: { trustLevel: 'legendary' },
+    });
+    check('unknown trust level rejected', bad.res.status === 400);
+
+    const up = await req('PATCH', `/api/admin/users/${devUser.id}/trust`, {
+      token: adminToken,
+      body: { trustLevel: 'trusted' },
+    });
+    check('admin sets trust level', up.res.ok && up.data.trustLevel === 'trusted', JSON.stringify(up.data));
+
+    const profile = await req('GET', `/api/developers/${devUser.id}`);
+    check('public profile shows the trusted badge', profile.data.developer?.trustBadge === 'trusted', profile.data.developer?.trustBadge);
+
+    await req('PATCH', `/api/admin/users/${devUser.id}/trust`, { token: adminToken, body: { trustLevel: 'new' } });
+    const plain = await req('GET', `/api/developers/${devUser.id}`);
+    check('clearing trust removes the badge', plain.data.developer?.trustBadge === null, String(plain.data.developer?.trustBadge));
+  }
+
+  /* §8: duplicate detection is advisory, never destructive */
+  {
+    // Change B's title to A's via a JSON edit: same evidence as a re-upload,
+    // without spending the upload budget the rate-limit section needs later.
+    const edit = await req('PUT', `/api/templates/${templateB._id}`, {
+      token: otherToken,
+      body: { title: templateA.title },
+    });
+    check('retitling to an existing title is accepted', edit.res.ok, JSON.stringify(edit.data).slice(0, 160));
+
+    const queue = await req('GET', '/api/admin/queue', { token: adminToken });
+    const dup = (queue.data.duplicates || []).find((d) => String(d.id) === String(templateB._id));
+    check('duplicate warning appears in the queue', !!dup, JSON.stringify((queue.data.duplicates || []).map((d) => d.title)));
+    // Both templates shipped with the same fixture archive, so the matches
+    // can lead with "Identical file" -- the title evidence has to be found
+    // wherever it sits in the list, not assumed to be first.
+    check(
+      'the match names a real reason',
+      !!dup?.matches?.length && dup.matches.some((m) => /same title/i.test(m.reason || '')),
+      JSON.stringify(dup?.matches)
+    );
+
+    const reviewed = await req('PATCH', `/api/admin/templates/${templateB._id}/duplicates`, {
+      token: adminToken,
+      body: { reviewed: true },
+    });
+    const after = await req('GET', '/api/admin/queue', { token: adminToken });
+    check(
+      'admin review clears the warning (nothing deleted)',
+      reviewed.res.ok && !(after.data.duplicates || []).some((d) => String(d.id) === String(templateB._id))
+    );
+
+    const pub = await req('GET', '/api/templates?limit=12');
+    check('duplicate internals stay off the public catalogue', (pub.data.templates || []).every((t) => !('duplicateCheck' in t)));
+  }
+
+  /* §14: content moderation with an audit trail */
+  {
+    const hidden = await req('PATCH', `/api/admin/templates/${templateA._id}/content`, {
+      token: adminToken,
+      body: { state: 'hidden' },
+    });
+    check('admin hides a description', hidden.res.ok && hidden.data.content?.state === 'hidden', JSON.stringify(hidden.data));
+
+    const detail = await req('GET', `/api/templates/${templateA.slug}`);
+    check('hidden description is withheld publicly', detail.data.template?.contentHidden === true && !detail.data.template?.description, String(detail.data.template?.description).slice(0, 40));
+
+    const restored = await req('PATCH', `/api/admin/templates/${templateA._id}/content`, {
+      token: adminToken,
+      body: { state: 'visible' },
+    });
+    const back = await req('GET', `/api/templates/${templateA.slug}`);
+    check(
+      'restore brings the original text back untouched',
+      restored.res.ok && back.data.template?.contentHidden === false && back.data.template?.description === templateA.description,
+      String(back.data.template?.description).slice(0, 60)
+    );
+
+    const EDIT = 'Admin-edited description used by the smoke run.';
+    const edit = await req('PATCH', `/api/admin/templates/${templateA._id}/content`, {
+      token: adminToken,
+      body: { description: EDIT },
+    });
+    const shown = await req('GET', `/api/templates/${templateA.slug}`);
+    check('admin edit replaces the public text', edit.res.ok && shown.data.template?.description === EDIT, String(shown.data.template?.description).slice(0, 60));
+
+    const undo = await req('PATCH', `/api/admin/templates/${templateA._id}/content`, {
+      token: adminToken,
+      body: { description: null },
+    });
+    const final = await req('GET', `/api/templates/${templateA.slug}`);
+    check('clearing the override restores the author text', undo.res.ok && final.data.template?.description === templateA.description);
+
+    const audit = await req('GET', '/api/admin/audit?action=template.content', { token: adminToken });
+    check(
+      'moderation left audit entries',
+      (audit.data.entries || []).length >= 3 && (audit.data.entries || []).every((e) => e.metadata?.op),
+      `${(audit.data.entries || []).length} entries`
+    );
+  }
+
+  /* §11: feature flags gate real routes and say why */
+  {
+    const forbidden = await req('PUT', '/api/admin/flags', { token: devToken, body: { flags: {} } });
+    check('non-admin cannot change flags', forbidden.res.status === 403);
+
+    const off = await req('PUT', '/api/admin/flags', {
+      token: adminToken,
+      body: { flags: { downloads: false } },
+    });
+    check('admin disables downloads', off.res.ok && off.data.changed === true, JSON.stringify(off.data));
+
+    const blocked = await req('POST', `/api/templates/${templateA.slug}/download`, { token: devToken });
+    check(
+      'download is blocked with a clear message',
+      blocked.res.status === 403 && blocked.data.code === 'FEATURE_DISABLED' && /downloads/i.test(blocked.data.error || ''),
+      JSON.stringify(blocked.data)
+    );
+
+    const payload = await req('GET', '/api/platform');
+    check('the switch is visible to the client', payload.data.flags?.downloads === false);
+
+    const on = await req('PUT', '/api/admin/flags', { token: adminToken, body: { flags: { downloads: true } } });
+    const allowed = await req('POST', `/api/templates/${templateA.slug}/download`, { token: devToken });
+    check('re-enabling downloads restores the route', on.res.ok && allowed.res.ok, `${on.res.status} ${allowed.res.status}`);
+  }
+
+  /* §12: maintenance mode walls the API but never the admin */
+  {
+    const on = await req('PUT', '/api/admin/maintenance', {
+      token: adminToken,
+      body: { enabled: true, message: 'Smoke maintenance window.' },
+    });
+    check('admin enables maintenance', on.res.ok && on.data.maintenance?.enabled === true, JSON.stringify(on.data));
+
+    const publicCall = await req('GET', '/api/templates');
+    check(
+      'public traffic gets 503 + the admin message',
+      publicCall.res.status === 503 && publicCall.data.code === 'MAINTENANCE' && publicCall.data.error === 'Smoke maintenance window.',
+      JSON.stringify(publicCall.data)
+    );
+
+    const status = await req('GET', '/api/platform');
+    check('the status payload stays reachable', status.res.ok && status.data.maintenance?.enabled === true);
+
+    const devCall = await req('GET', '/api/admin/stats', { token: devToken });
+    check('a non-admin still cannot enter the admin panel', devCall.res.status === 503 && devCall.data.code === 'MAINTENANCE', String(devCall.res.status));
+
+    const adminCall = await req('GET', '/api/admin/stats', { token: adminToken });
+    check('the admin panel stays accessible', adminCall.res.ok, String(adminCall.res.status));
+
+    const off = await req('PUT', '/api/admin/maintenance', { token: adminToken, body: { enabled: false } });
+    const after = await req('GET', '/api/templates');
+    check('maintenance off restores public traffic', off.res.ok && after.res.ok, `${off.res.status} ${after.res.status}`);
+  }
+
+  /* §9 + §10: the security event log and admin login history */
+  {
+    const forbidden = await req('GET', '/api/admin/security', { token: devToken });
+    check('non-admin cannot read the security log', forbidden.res.status === 403);
+
+    const { res, data } = await req('GET', '/api/admin/security', { token: adminToken });
+    check('GET /api/admin/security -> 200', res.ok);
+    const types = new Set((data.events || []).map((e) => e.type));
+    check('log records the events that actually happened', types.has('login.success') && types.has('login.failed'), JSON.stringify([...types]));
+    check('a rejected upload left a trace', types.has('upload.rejected'), JSON.stringify([...types]));
+    check(
+      'no event ever carries a password field',
+      (data.events || []).every((e) => !JSON.stringify(e).match(/passwordHash|"password"/))
+    );
+
+    const logins = await req('GET', '/api/admin/security?scope=logins', { token: adminToken });
+    check(
+      'admin login history is real and admin-only',
+      logins.res.ok && (logins.data.events || []).length >= 1 && (logins.data.events || []).every((e) => e.roleAtEvent === 'admin'),
+      `${(logins.data.events || []).length} rows`
+    );
+    check('counts are exposed for the tabs', logins.data.counts?.all >= logins.data.counts?.logins, JSON.stringify(logins.data.counts));
+  }
+
+  /* §22 + §15: health measured, backup honest */
+  {
+    const { res, data } = await req('GET', '/api/admin/health', { token: adminToken });
+    check('GET /api/admin/health -> 200', res.ok);
+    check('database check is healthy while connected', data.checks?.database?.state === 'healthy', JSON.stringify(data.checks?.database));
+    check('storage check actually touched the disk', data.checks?.storage?.state === 'healthy', JSON.stringify(data.checks?.storage));
+    check('moderation check reports a real count', typeof data.checks?.moderation?.pending === 'number');
+    check('security check reports critical events', typeof data.checks?.security?.critical24h === 'number');
+    check(
+      'backup never pretends: it says it is not configured',
+      data.checks?.backup?.state === 'not_configured' && /not configured/i.test(data.checks?.backup?.message || ''),
+      JSON.stringify(data.checks?.backup)
+    );
+  }
+
+  /* §19 + §20: the unified queue, sorted by priority */
+  {
+    const { res, data } = await req('GET', '/api/admin/queue', { token: adminToken });
+    check('GET /api/admin/queue -> 200', res.ok);
+    const sum = (data.counts?.templates || 0) + (data.counts?.reports || 0) + (data.counts?.content || 0) + (data.counts?.duplicates || 0);
+    check('queue counts add up to its total', data.counts?.total === sum, `${data.counts?.total} vs ${sum}`);
+    check('queue returned the pending reports', (data.reports || []).length >= 2, `${(data.reports || []).length} reports`);
+
+    const seq = (data.reports || []).map((r) => rank[r.priority] || 2);
+    check(
+      'reports sort critical-first (§20)',
+      seq.every((v, i) => i === 0 || v <= seq[i - 1]),
+      JSON.stringify(seq)
+    );
+
+    const critical = (data.reports || []).find((r) => r.priority === 'critical');
+    check('the malicious report leads the queue', !!critical && critical.reason === 'Malicious/suspicious content', JSON.stringify((data.reports || []).map((r) => r.priority)));
+
+    const mine = await req('GET', '/api/admin/queue', { token: devToken });
+    check('non-admin cannot read the queue', mine.res.status === 403);
+  }
+
+  /* §20: priority can be re-ranked and is audited */
+  {
+    const list = await req('GET', '/api/admin/reports', { token: adminToken });
+    const report = (list.data.reports || [])[0];
+    check('reports list exposes priority', !!report && 'priority' in report, JSON.stringify(report || {}).slice(0, 120));
+
+    const bad = await req('PATCH', `/api/admin/reports/${report._id}`, {
+      token: adminToken,
+      body: { priority: 'urgent-ish' },
+    });
+    check('unknown priority rejected', bad.res.status === 400);
+
+    const up = await req('PATCH', `/api/admin/reports/${report._id}`, {
+      token: adminToken,
+      body: { priority: 'low' },
+    });
+    check('admin re-ranks a report', up.res.ok && up.data.report?.priority === 'low', JSON.stringify(up.data.report?.priority));
+
+    const audit = await req('GET', '/api/admin/audit?action=report.priority', { token: adminToken });
+    check('the re-rank is in the audit log', (audit.data.entries || []).length >= 1, `${(audit.data.entries || []).length} entries`);
+
+    await req('PATCH', `/api/admin/reports/${report._id}`, { token: adminToken, body: { priority: 'normal' } });
+  }
+
+  /* §17: internal notes, never public */
+  {
+    const created = await req('POST', '/api/admin/notes', {
+      token: adminToken,
+      body: { targetType: 'template', targetId: templateA._id, body: 'Internal smoke note -- not for the public.' },
+    });
+    check('admin adds an internal note', created.res.status === 201, JSON.stringify(created.data));
+
+    const notes = await req('GET', `/api/admin/notes?targetType=template&targetId=${templateA._id}`, { token: adminToken });
+    check('note reads back for admins', (notes.data.notes || []).length === 1, `${(notes.data.notes || []).length}`);
+
+    const publicView = await req('GET', `/api/templates/${templateA.slug}`);
+    check('the note is not on the public template', !JSON.stringify(publicView.data).includes('Internal smoke note'));
+
+    const forbidden = await req('GET', `/api/admin/notes?targetType=template&targetId=${templateA._id}`, { token: devToken });
+    check('non-admin cannot read notes', forbidden.res.status === 403);
+
+    const del = await req('DELETE', `/api/admin/notes/${created.data.note._id}`, { token: adminToken });
+    const empty = await req('GET', `/api/admin/notes?targetType=template&targetId=${templateA._id}`, { token: adminToken });
+    check('note deletes cleanly', del.res.ok && (empty.data.notes || []).length === 0);
+  }
+
+  /* §18: watchlist toggle */
+  {
+    const first = await req('POST', '/api/admin/watch', {
+      token: adminToken,
+      body: { targetType: 'template', targetId: templateA._id, label: templateA.title },
+    });
+    check('watch a template', first.res.ok && first.data.watching === true, JSON.stringify(first.data));
+
+    const list = await req('GET', '/api/admin/watchlist', { token: adminToken });
+    check('watchlist lists it', (list.data.items || []).length === 1, `${(list.data.items || []).length}`);
+
+    const second = await req('POST', '/api/admin/watch', {
+      token: adminToken,
+      body: { targetType: 'template', targetId: templateA._id },
+    });
+    const after = await req('GET', '/api/admin/watchlist', { token: adminToken });
+    check('toggling again removes it', second.data.watching === false && (after.data.items || []).length === 0);
+  }
+
+  /* §23: categorised global search */
+  {
+    const tooShort = await req('GET', '/api/admin/search?q=a', { token: adminToken });
+    check('one-character search refused', tooShort.res.status === 400);
+
+    const word = (templateA.title.split(/\s+/).find((w) => w.length >= 2) || 'smoke').slice(0, 30);
+    const { res, data } = await req('GET', `/api/admin/search?q=${encodeURIComponent(word)}`, { token: adminToken });
+    check('search -> 200 with 5 categories', res.ok && (data.groups || []).length === 5, `${(data.groups || []).length} groups`);
+    const templatesGroup = (data.groups || []).find((g) => g.key === 'templates');
+    check('search finds the real template', (templatesGroup?.count || 0) >= 1, `count=${templatesGroup?.count} word=${word}`);
+    check('every group ships a count', (data.groups || []).every((g) => typeof g.count === 'number'));
+
+    const forbidden = await req('GET', `/api/admin/search?q=${encodeURIComponent(word)}`, { token: devToken });
+    check('non-admin cannot search', forbidden.res.status === 403);
+  }
+
+  /* §21 + §25: Action Required on the stats payload */
+  {
+    const { data } = await req('GET', '/api/admin/stats', { token: adminToken });
+    const ar = data.actionRequired || {};
+    check('stats carry an Action Required block', !!data.actionRequired, JSON.stringify(data.actionRequired));
+    check(
+      'its numbers are real counts',
+      typeof ar.templates === 'number' && typeof ar.reports === 'number' && typeof ar.content === 'number' && typeof ar.duplicates === 'number' && typeof ar.security === 'number',
+      JSON.stringify(ar)
+    );
+    check('reports waiting match the queue', ar.reports >= 2, `ar.reports=${ar.reports}`);
+  }
+
+  /* the new audit actions exist alongside the original nine */
+  {
+    const { data } = await req('GET', '/api/admin/audit', { token: adminToken });
+    const actions = new Set((data.entries || []).map((e) => e.action));
+    const expected = ['template.featured', 'template.quality', 'user.trust', 'content.sections', 'flag.changed', 'maintenance.toggled'];
+    const missing = expected.filter((a) => !actions.has(a));
+    check('curation and platform actions are audited', missing.length === 0, missing.join(', ') || 'all present');
+  }
+
   section('Teardown');
   {
     const del = await req('DELETE', `/api/templates/${templateA._id}`, { token: devToken });

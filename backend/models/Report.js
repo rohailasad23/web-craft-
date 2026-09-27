@@ -15,6 +15,20 @@ const REASONS = [
 /** Spec §7's lifecycle: a moderator moves it forward, never deletes history. */
 const STATUSES = ['pending', 'reviewed', 'resolved', 'dismissed'];
 
+/**
+ * Spec §20: queue priority. The DEFAULT is derived from the report's own
+ * reason -- a malicious-content claim genuinely is more urgent than a broken
+ * demo, and deriving it from real input is not a fabricated signal. An admin
+ * can always override it either way.
+ */
+const PRIORITIES = ['low', 'normal', 'high', 'critical'];
+
+/** Reason -> starting priority. Everything unlisted is 'normal'. */
+const REASON_PRIORITY = {
+  'Malicious/suspicious content': 'critical',
+  'Copyright issue': 'high',
+};
+
 const reportSchema = new mongoose.Schema(
   {
     userId: {
@@ -33,6 +47,8 @@ const reportSchema = new mongoose.Schema(
     // Optional. Kept short so a report cannot be used as free-form storage.
     description: { type: String, trim: true, maxlength: 1000, default: '' },
     status: { type: String, enum: STATUSES, default: 'pending', index: true },
+    // §20: sorted into the moderation queue by this, then by age.
+    priority: { type: String, enum: PRIORITIES, default: 'normal', index: true },
   },
   { timestamps: true }
 );
@@ -52,7 +68,12 @@ reportSchema.index(
   { unique: true, partialFilterExpression: { status: 'pending' } }
 );
 reportSchema.index({ status: 1, createdAt: -1 });
+// The queue's sort: status first, then §20 priority (mapped to a rank in
+// routes), then age.
+reportSchema.index({ status: 1, priority: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Report', reportSchema);
 module.exports.REASONS = REASONS;
 module.exports.STATUSES = STATUSES;
+module.exports.PRIORITIES = PRIORITIES;
+module.exports.REASON_PRIORITY = REASON_PRIORITY;

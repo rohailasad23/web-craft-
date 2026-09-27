@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { useCatalog } from '../lib/catalog';
 import { useSession } from '../lib/session';
+import { usePlatform } from '../lib/platform';
 import { formatCount, initials } from '../lib/format';
 import { useSeo } from '../lib/seo';
 import TemplateCard from '../components/Templates/TemplateCard';
@@ -77,6 +78,13 @@ export default function Home() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useSession();
   const { categories, ready } = useCatalog();
+  const platform = usePlatform();
+
+  // Spec §3: the homepage's seven content sections are the admin's to order,
+  // rename and switch off. Before config answers (or if it never does) this
+  // is EXACTLY the layout that shipped before the switchboard existed --
+  // "unknown" behaves like "as built", never like "empty page".
+  const sections = platform.sections?.length ? platform.sections : FALLBACK_SECTIONS;
 
   // Spec §15. Home is the one page whose metadata is static -- it is also the
   // page the branded og.png was designed for.
@@ -88,6 +96,7 @@ export default function Home() {
   });
 
   const [featured, setFeatured] = useState(null);
+  const [trending, setTrending] = useState(null);
   const [latest, setLatest] = useState(null);
   const [popular, setPopular] = useState(null);
   const [developers, setDevelopers] = useState(null);
@@ -99,13 +108,19 @@ export default function Home() {
 
     Promise.all([
       get('/api/templates?featured=true&limit=4'),
+      // §2: the trending row is behaviour, not a sort the catalogue page has
+      // -- downloads and saves from the last 14 days, with any admin
+      // override applied. It is fetched with the rest so one loading state
+      // covers the whole page.
+      get('/api/templates?trending=true&limit=4'),
       get('/api/templates?sort=newest&limit=4'),
       get('/api/templates?sort=downloads&limit=4'),
       get('/api/developers?limit=6'),
     ])
-      .then(([f, l, p, d]) => {
+      .then(([f, tr, l, p, d]) => {
         if (!alive) return;
         setFeatured(f.templates);
+        setTrending(tr.templates);
         setLatest(l.templates);
         setPopular(p.templates);
         setDevelopers(d.developers);
@@ -327,121 +342,93 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ------------------------------------------------ categories */}
-        {ready && categories?.length > 0 && (
-          <section className="mt-16" aria-labelledby="categories-heading">
-            <SectionHeading
-              id="categories-heading"
-              eyebrow="Browse"
-              title="Popular categories"
-              blurb="Start from the kind of site you are building. Categories and technologies share one filter bar, so “React” and “Portfolio” are a single click apart — pick either and the catalogue narrows itself."
-              action={{ to: '/templates', label: 'View all' }}
-            />
-            <div className="stagger mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {categories.map((c, i) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => goCategory(c)}
-                  className="ui-card ui-card--hover group p-5 text-left"
-                >
-                  <span
-                    className="grid h-11 w-11 place-items-center rounded-xl text-lg transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6"
-                    style={{ background: CATEGORY_TINTS[i % CATEGORY_TINTS.length] }}
-                    aria-hidden
-                  >
-                    {CATEGORY_ICONS[i % CATEGORY_ICONS.length]}
-                  </span>
-                  <span className="mt-3.5 block text-sm font-bold text-ink-900 group-hover:text-brand-700">
-                    {c}
-                  </span>
-                  <span className="mt-0.5 block text-xs text-ink-500">Explore →</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
+        {/* ------------------------------- admin-ordered sections (§3)
+            These seven rows are the ones the Content screen reorders, renames
+            and switches off, so they render from the CONFIG's order rather
+            than the page's. Everything around them -- hero, explainer, FAQ,
+            call to action -- is fixed product copy and stays put. */}
+        {sections
+          .filter((s) => s.enabled !== false)
+          .map((s) => {
+            switch (s.key) {
+              case 'categories':
+                return ready && categories?.length > 0 ? (
+                  <CategoriesSection
+                    key="categories"
+                    section={s}
+                    categories={categories}
+                    goCategory={goCategory}
+                  />
+                ) : null;
 
-        {/* -------------------------------------------------- featured */}
-        <TemplateSection
-          id="featured-heading"
-          eyebrow="Hand-picked"
-          title="Featured templates"
-          blurb="A short shortlist shown first on purpose: templates marked as featured, each with a live demo, a screenshot gallery and the full source archive attached."
-          items={featured}
-          loading={loading}
-        />
+              case 'featured':
+                return (
+                  <TemplateSection
+                    key="featured"
+                    id="featured-heading"
+                    eyebrow="Hand-picked"
+                    title={s.title || SECTION_TITLES.featured}
+                    blurb={s.blurb || DEFAULT_BLURBS.featured}
+                    items={featured}
+                    loading={loading}
+                  />
+                );
 
-        {/* ---------------------------------------------------- latest */}
-        <TemplateSection
-          id="latest-heading"
-          eyebrow="Fresh"
-          title="Latest templates"
-          blurb="Newest uploads first. Useful if you have been here before and want to see what landed since your last visit — every card opens the full template page with the demo and the download."
-          items={latest}
-          loading={loading}
-          action={{ to: '/templates?sort=newest', label: 'All latest' }}
-        />
+              case 'trending':
+                return (
+                  <TemplateSection
+                    key="trending"
+                    id="trending-heading"
+                    eyebrow="Right now"
+                    title={s.title || SECTION_TITLES.trending}
+                    blurb={s.blurb || DEFAULT_BLURBS.trending}
+                    items={trending}
+                    loading={loading}
+                  />
+                );
 
-        {/* -------------------------------------------------- popular */}
-        <TemplateSection
-          id="popular-heading"
-          eyebrow="Community favourites"
-          title="Most downloaded"
-          blurb="Sorted by real download counts recorded on this site, so this is the closest thing we have to a list of what developers actually reach for."
-          items={popular}
-          loading={loading}
-          action={{ to: '/templates?sort=downloads', label: 'All popular' }}
-        />
+              case 'latest':
+                return (
+                  <TemplateSection
+                    key="latest"
+                    id="latest-heading"
+                    eyebrow="Fresh"
+                    title={s.title || SECTION_TITLES.latest}
+                    blurb={s.blurb || DEFAULT_BLURBS.latest}
+                    items={latest}
+                    loading={loading}
+                    action={{ to: '/templates?sort=newest', label: 'All latest' }}
+                  />
+                );
 
-        {/* ----------------------------------------------- developers */}
-        <section className="mt-16" aria-labelledby="developers-heading">
-          <SectionHeading
-            id="developers-heading"
-            eyebrow="Community"
-            title="Meet the contributors"
-            blurb="Every template has an author. These are the people with published work here — open a profile to see everything they have uploaded and how often it has been downloaded."
-            action={{ to: '/developers', label: 'All developers' }}
-          />
+              case 'popular':
+                return (
+                  <TemplateSection
+                    key="popular"
+                    id="popular-heading"
+                    eyebrow="Community favourites"
+                    title={s.title || SECTION_TITLES.popular}
+                    blurb={s.blurb || DEFAULT_BLURBS.popular}
+                    items={popular}
+                    loading={loading}
+                    action={{ to: '/templates?sort=downloads', label: 'All popular' }}
+                  />
+                );
 
-          {loading ? (
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 3 }, (_, i) => (
-                <StatSkeleton key={i} />
-              ))}
-            </div>
-          ) : (
-            <div className="stagger mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {(developers || []).map((d) => (
-                <Link
-                  key={d.id}
-                  to={`/developers/${d.id}`}
-                  className="ui-card ui-card--hover group flex items-center gap-4 p-5"
-                >
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white shadow-soft">
-                    {initials(d.name)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-ink-900 group-hover:text-brand-700">
-                      {d.name}
-                    </span>
-                    <span className="mt-0.5 block text-xs text-ink-500">
-                      {d.templateCount} template{d.templateCount === 1 ? '' : 's'} ·{' '}
-                      {formatCount(d.totalDownloads)} downloads
-                    </span>
-                  </span>
-                  <span aria-hidden className="text-ink-500 transition-transform group-hover:translate-x-1">
-                    →
-                  </span>
-                </Link>
-              ))}
-            </div>
-          )}
+              case 'spotlight':
+                // §4: an admin's picks, shipped inside the platform payload --
+                // no extra request, and empty until someone is actually chosen.
+                return <SpotlightSection key="spotlight" section={s} devs={platform.spotlight || []} />;
 
-          {!loading && (developers || []).length === 0 && (
-            <p className="ui-alert ui-alert--info mt-6">No developers have joined yet.</p>
-          )}
-        </section>
+              case 'contributors':
+                return (
+                  <ContributorsSection key="contributors" section={s} developers={developers} loading={loading} />
+                );
+
+              default:
+                return null;
+            }
+          })}
 
         {/* ------------------------------------------------------- FAQ */}
         <section className="mt-16" aria-labelledby="faq-heading">
@@ -597,6 +584,203 @@ const CATEGORY_TINTS = [
   'rgba(16,185,129,.14)',
   'rgba(139,92,246,.14)',
 ];
+
+/* ------------------------------------------------- §3 config fallbacks */
+
+/**
+ * The shipped layout, used until GET /api/platform answers (and for the whole
+ * visit if it never does). Titles below mirror PlatformConfig's defaults on
+ * the server; blurbs live here because they are pure presentation copy the
+ * API has no reason to know about. Either way: no config renders exactly the
+ * homepage that existed before the switchboard, not an empty page.
+ */
+const FALLBACK_SECTIONS = ['categories', 'featured', 'trending', 'latest', 'popular', 'spotlight', 'contributors'].map(
+  (key, i) => ({ key, enabled: true, order: (i + 1) * 10, title: '', blurb: '' })
+);
+
+const SECTION_TITLES = {
+  categories: 'Popular categories',
+  featured: 'Featured templates',
+  trending: 'Trending now',
+  latest: 'Latest templates',
+  popular: 'Most downloaded',
+  spotlight: 'Developer spotlight',
+  contributors: 'Meet the contributors',
+};
+
+const DEFAULT_BLURBS = {
+  categories:
+    'Start from the kind of site you are building. Categories and technologies share one filter bar, so “React” and “Portfolio” are a single click apart — pick either and the catalogue narrows itself.',
+  featured:
+    'A short shortlist shown first on purpose: templates marked as featured, each with a live demo, a screenshot gallery and the full source archive attached.',
+  trending:
+    'Downloads and saves from the last two weeks, counted on this site — what people are reaching for right now, not what they always have.',
+  latest:
+    'Newest uploads first. Useful if you have been here before and want to see what landed since your last visit — every card opens the full template page with the demo and the download.',
+  popular:
+    'Sorted by real download counts recorded on this site, so this is the closest thing we have to a list of what developers actually reach for.',
+  spotlight:
+    'Developers the team has put forward by hand — one profile, their best work and nothing they did not choose to show.',
+  contributors:
+    'Every template has an author. These are the people with published work here — open a profile to see everything they have uploaded and how often it has been downloaded.',
+};
+
+function CategoriesSection({ section, categories, goCategory }) {
+  return (
+    <section className="mt-16" aria-labelledby="categories-heading">
+      <SectionHeading
+        id="categories-heading"
+        eyebrow="Browse"
+        title={section.title || SECTION_TITLES.categories}
+        blurb={section.blurb || DEFAULT_BLURBS.categories}
+        action={{ to: '/templates', label: 'View all' }}
+      />
+      <div className="stagger mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        {categories.map((c, i) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => goCategory(c)}
+            className="ui-card ui-card--hover group p-5 text-left"
+          >
+            <span
+              className="grid h-11 w-11 place-items-center rounded-xl text-lg transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6"
+              style={{ background: CATEGORY_TINTS[i % CATEGORY_TINTS.length] }}
+              aria-hidden
+            >
+              {CATEGORY_ICONS[i % CATEGORY_ICONS.length]}
+            </span>
+            <span className="mt-3.5 block text-sm font-bold text-ink-900 group-hover:text-brand-700">
+              {c}
+            </span>
+            <span className="mt-0.5 block text-xs text-ink-500">Explore →</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ContributorsSection({ section, developers, loading }) {
+  return (
+    <section className="mt-16" aria-labelledby="developers-heading">
+      <SectionHeading
+        id="developers-heading"
+        eyebrow="Community"
+        title={section.title || SECTION_TITLES.contributors}
+        blurb={section.blurb || DEFAULT_BLURBS.contributors}
+        action={{ to: '/developers', label: 'All developers' }}
+      />
+
+      {loading ? (
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }, (_, i) => (
+            <StatSkeleton key={i} />
+          ))}
+        </div>
+      ) : (
+        <div className="stagger mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {(developers || []).map((d) => (
+            <Link
+              key={d.id}
+              to={`/developers/${d.id}`}
+              className="ui-card ui-card--hover group flex items-center gap-4 p-5"
+            >
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white shadow-soft">
+                {initials(d.name)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-ink-900 group-hover:text-brand-700">
+                  {d.name}
+                </span>
+                <span className="mt-0.5 block text-xs text-ink-500">
+                  {d.templateCount} template{d.templateCount === 1 ? '' : 's'} ·{' '}
+                  {formatCount(d.totalDownloads)} downloads
+                </span>
+              </span>
+              <span aria-hidden className="text-ink-500 transition-transform group-hover:translate-x-1">
+                →
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {!loading && (developers || []).length === 0 && (
+        <p className="ui-alert ui-alert--info mt-6">No developers have joined yet.</p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * §4's spotlight: the developers an admin actually picked, delivered inside
+ * the platform payload. Renders nothing until someone has been chosen (spec
+ * §1/§22: never fabricate a spotlight), and the badge it shows -- if any --
+ * is the admin's own trust judgement, never an auto-award.
+ */
+function SpotlightSection({ section, devs }) {
+  if (!devs.length) return null;
+
+  return (
+    <section className="mt-16" aria-labelledby="spotlight-heading">
+      <SectionHeading
+        id="spotlight-heading"
+        eyebrow="Highlighted"
+        title={section.title || SECTION_TITLES.spotlight}
+        blurb={section.blurb || DEFAULT_BLURBS.spotlight}
+        action={{ to: '/developers', label: 'All developers' }}
+      />
+      <div className="stagger mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {devs.map((d) => (
+          <Link key={d.id} to={`/developers/${d.id}`} className="ui-card ui-card--hover group p-5">
+            <span className="flex items-center gap-4">
+              {/* Initials underneath, photo on top: a pasted avatar URL that
+                  has since rotted hides itself instead of showing a broken
+                  image box. */}
+              <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white shadow-soft">
+                {initials(d.name)}
+                {d.image && (
+                  <img
+                    src={d.image}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full rounded-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <span className="truncate text-sm font-bold text-ink-900 group-hover:text-brand-700">
+                    {d.name}
+                  </span>
+                  {d.trustBadge && (
+                    <span
+                      className={`ui-badge shrink-0 ${
+                        d.trustBadge === 'verified' ? 'bg-brand-50 text-brand-700' : 'bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {d.trustBadge === 'verified' ? 'Verified' : 'Trusted'}
+                    </span>
+                  )}
+                </span>
+                {d.skills?.length > 0 && (
+                  <span className="mt-1 block truncate text-xs text-ink-500">{d.skills.join(' · ')}</span>
+                )}
+              </span>
+            </span>
+            {d.blurb && (
+              <p className="mt-3.5 line-clamp-3 text-sm leading-relaxed text-ink-500">{d.blurb}</p>
+            )}
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function SectionHeading({ eyebrow, title, action, id, blurb }) {
   return (

@@ -9,9 +9,13 @@ const asyncHandler = require('../middleware/asyncHandler');
 const verifyToken = require('../middleware/auth');
 const { requireRole, optionalAuth, requireActive } = require('../middleware/auth');
 const { handleUpload } = require('../middleware/upload');
+const { flagGate } = require('../middleware/platform');
 const { SORTS, CATEGORIES } = require('../constants/catalog');
 const { normalizeUrl } = require('../utils/urls');
 const { safeRegex } = require('../utils/safeRegex');
+const publicTemplate = require('../utils/publicTemplate');
+const recordSecurityEvent = require('../services/securityEvent');
+const { candidateIds: trendingCandidateIds } = require('../services/trending');
 const User = require('../models/User');
 const Template = require('../models/Template');
 const { LICENSES } = require('../models/Template');
@@ -165,6 +169,97 @@ function canManage(template, user) {
   return !!authorId && String(authorId) === String(user.id);
 }
 
+/* --------------------------------------------- spec §11: uploads switch */
+
+/**
+ * §11's "template uploads" switch, charged only for a multipart body: a
+ * metadata edit writes nothing to disk and must not be blocked by a switch
+ * that exists to stop disk writes. Declared once so each request reuses the
+ * same middleware (and therefore the same cached config read).
+ */
+const uploadsFlag = flagGate('uploads');
+const uploadsFlagGate = (req, res, next) =>
+  /^multipart\/form-data\b/i.test(String(req.headers['content-type'] || ''))
+    ? uploadsFlag(req, res, next)
+    : next();
+
+/* ------------------------------------------------- spec §8: duplicates */
+
+/**
+ * sha256 of the stored archive. Computed once per upload and kept on the
+ * document, so "same file hash" later is a single indexed lookup instead of
+ * re-reading every archive on the platform. Failure is non-fatal: an
+ * unreadable file simply has no hash, and the other checks still run.
+ */
+async function hashStoredFile(key) {
+  if (!key) return '';
+  try {
+    const bytes = await fs.promises.readFile(storage.resolveKey(key));
+    return crypto.createHash('sha256').update(bytes).digest('hex');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Spec §8: look for POSSIBLE duplicates. Advisory only -- the result is
+ * stored on the document and surfaced to an admin; nothing is blocked,
+ * hidden or deleted automatically (§8: "Admin makes the final decision").
+ *
+ * Signals checked: the GitHub URL they claim to be the source of, the
+ * archive's own bytes, and the title (case-insensitive, so "Ink Paper" and
+ * "ink paper" match). A match by the same developer is called out in the
+ * reason, because that is the case that most often needs a human look.
+ */
+async function detectDuplicates({ title, githubUrl, hash, authorId, excludeId }) {
+  const exclude = excludeId ? { _id: { $ne: excludeId } } : {};
+  const select = 'title slug author authorName';
+  const matches = [];
+
+  const add = (type, doc, reason) => {
+    if (!doc) return;
+    const id = String(doc._id);
+    const existing = matches.find((m) => String(m.templateId) === id);
+    if (existing) {
+      // One row per other-template (an admin reviews a duplicate, not a list
+      // of its aliases) -- but every signal that fired stays visible, so
+      // "Same GitHub URL + Identical file" is one review decision with the
+      // full evidence attached instead of whichever check ran first.
+      existing.reason += ` + ${reason}`;
+      return;
+    }
+    const sameAuthor = String(doc.author?._id ?? doc.author) === String(authorId);
+    matches.push({
+      type,
+      templateId: doc._id,
+      title: doc.title,
+      reason: sameAuthor ? `${reason} (same developer)` : reason,
+    });
+  };
+
+  if (githubUrl) {
+    add('github', await Template.findOne({ githubUrl, ...exclude }).collation({ locale: 'en', strength: 2 }).select(select), 'Same GitHub URL');
+  }
+  if (hash) {
+    add('hash', await Template.findOne({ 'file.hash': hash, ...exclude }).select(select), 'Identical file');
+  }
+  if (title) {
+    add(
+      'title',
+      await Template.findOne({ title, ...exclude }).collation({ locale: 'en', strength: 2 }).select(select),
+      'Same title'
+    );
+  }
+
+  return matches;
+}
+
+/* -------------------------------------------------- spec §2: trending */
+
+// The candidate list itself lives in services/trending.js: the admin's
+// manual override is written by a different router, and that module is what
+// lets a flip take effect immediately instead of five cache minutes later.
+
 /* ------------------------------------------------------------------- routes */
 
 /**
@@ -187,6 +282,7 @@ router.get(
     const filter = String(req.query.filter || '').trim();
     const sort = SORTS.includes(req.query.sort) ? req.query.sort : 'newest';
     const featured = req.query.featured === 'true';
+    const trending = req.query.trending === 'true';
 
     const query = { status: 'approved' };
     const and = [];
@@ -196,7 +292,10 @@ router.get(
       and.push({
         $or: [
           { title: rx },
-          { description: rx },
+          // §14: a hidden description must not be findable, and the admin's
+          // edited version is what the public page shows -- so search reads
+          // the same text everyone else reads.
+          { 'content.state': { $ne: 'hidden' }, $or: [{ description: rx }, { 'content.editedDescription': rx }] },
           { technologies: rx },
           { tags: rx },
           { category: rx },
@@ -224,25 +323,43 @@ router.get(
       downloads: { downloadCount: -1, createdAt: -1 },
       updated: { updatedAt: -1, createdAt: -1 },
       az: { title: 1 },
-    }[sort];
+      // Spec §1's featured priority: the admin's order decides, download
+      // count only breaks ties. (Lower number = shown earlier.)
+      featured: { featuredOrder: 1, downloadCount: -1, createdAt: -1 },
+    }[featured ? 'featured' : sort];
 
-    const templates = await Template.find(query)
-      .sort(sortSpec)
-      .skip((page - 1) * limit)
-      .limit(limit);
+    let templates;
+    let total;
 
-    const [total, saved] = await Promise.all([
-      Template.countDocuments(query),
-      favoritedSet(req.user?.id, templates.map((t) => t._id)),
-    ]);
+    if (trending) {
+      // The activity ranking IS the order (spec §2), so this branch selects
+      // its own candidates and pages them in JS: the candidate set is bounded
+      // by the 14-day activity, not by the catalogue.
+      const candidates = await trendingCandidateIds();
+      const matches = await Template.find({ ...query, _id: { $in: candidates } });
+      const rank = new Map(candidates.map((id, i) => [String(id), i]));
+      matches.sort((a, b) => (rank.get(String(a._id)) ?? 0) - (rank.get(String(b._id)) ?? 0));
+      total = matches.length;
+      templates = matches.slice((page - 1) * limit, page * limit);
+    } else {
+      templates = await Template.find(query)
+        .sort(sortSpec)
+        .skip((page - 1) * limit)
+        .limit(limit);
+      total = await Template.countDocuments(query);
+    }
+
+    const saved = await favoritedSet(req.user?.id, templates.map((t) => t._id));
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     res.json({
       success: true,
       // Spec §4 names the pagination fields explicitly; they are the only
       // ones we return so there is a single envelope to keep in step.
+      // publicTemplate() strips the admin internals (quality score, duplicate
+      // matches, moderation plumbing) before anything leaves the API.
       templates: templates.map((t) => ({
-        ...t.toObject(),
+        ...publicTemplate(t),
         favorited: saved.has(String(t._id)),
       })),
       currentPage: page,
@@ -269,7 +386,11 @@ router.get(
     const templates = await Template.find({ author: req.user.id })
       .sort({ createdAt: -1 })
       .limit(200);
-    res.json({ success: true, templates });
+    // The owner sees their template as the public does (edits applied,
+    // hidden descriptions withheld) -- but never the admin internals: a
+    // developer must not be able to read their quality score or someone
+    // else's duplicate match out of their own list response.
+    res.json({ success: true, templates: templates.map((t) => publicTemplate(t)) });
   })
 );
 
@@ -361,6 +482,13 @@ router.post(
   '/',
   verifyToken,
   requireRole('developer', 'admin'),
+  // §11: submissions and uploads are two separate switches that happen to
+  // share an endpoint -- "pause new submissions" must not also stop a
+  // developer replacing a broken zip, and vice versa. Both check before a
+  // byte is written to disk (the uploads switch only counts when a file is
+  // actually on its way in, exactly like the upload rate budget).
+  flagGate('submissions'),
+  uploadsFlagGate,
   handleUpload,
   asyncHandler(async (req, res) => {
     const title = String(req.body.title || '').trim();
@@ -410,6 +538,17 @@ router.post(
 
     const thumbnail = uploads.thumbnail || (await generateThumbnail(title, category));
 
+    // Spec §8: hash the archive and look for possible duplicates BEFORE the
+    // document exists (nothing to exclude yet). Detection never blocks the
+    // upload -- the admin decides (§8).
+    const fileHash = await hashStoredFile(uploads.file.key);
+    const matches = await detectDuplicates({
+      title,
+      githubUrl,
+      hash: fileHash,
+      authorId: author._id,
+    });
+
     const template = await Template.create({
       title,
       slug: await uniqueSlug(title),
@@ -423,13 +562,28 @@ router.post(
       githubUrl: githubUrl || '',
       version,
       license,
-      file: uploads.file,
+      file: { ...uploads.file, hash: fileHash },
       author: author._id,
       authorName: author.name,
+      duplicateCheck: matches.length ? { checkedAt: new Date(), matches, reviewed: false } : undefined,
       // Spec §3: auto-approve for now, but `status` + the admin endpoint are
       // already in place so moderation can be switched on later.
       status: 'approved',
     });
+
+    // §9 "unusual upload activity": a suspected duplicate is worth an entry
+    // even if the admin never opens the queue -- fire-and-forget, and the
+    // upload itself already succeeded.
+    if (matches.length) {
+      recordSecurityEvent('upload.duplicate', {
+        req,
+        severity: 'warning',
+        actorId: author._id,
+        email: author.email,
+        roleAtEvent: author.role,
+        meta: { templateId: String(template._id), title: template.title, matches: matches.length },
+      });
+    }
 
     res.status(201).json({ success: true, message: 'Template published', template });
   })
@@ -446,7 +600,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const template = await Template.findOne({ slug: req.params.slug }).populate(
       'author',
-      'name avatar bio role createdAt'
+      'name avatar bio role createdAt content'
     );
     if (!template) return res.status(404).json({ error: 'Template not found' });
 
@@ -458,10 +612,22 @@ router.get(
 
     const saved = await favoritedSet(req.user?.id, [template._id]);
 
+    // §14: the author's bio goes through the same moderation as their profile
+    // -- an admin edit replaces it, a hidden bio is withheld -- and the
+    // template itself through the public projection (edits applied, hidden
+    // description withheld, internals stripped).
+    if (template.author) {
+      const content = template.author.content || {};
+      template.author.bio = content.state === 'hidden' ? '' : content.editedBio || template.author.bio;
+      delete template.author.content;
+    }
+
+    const canEdit = canManage(template, req.user) || req.user?.role === 'admin';
+
     res.json({
       success: true,
-      template: { ...template.toObject(), favorited: saved.has(String(template._id)) },
-      canEdit: canManage(template, req.user) || req.user?.role === 'admin',
+      template: { ...publicTemplate(template), favorited: saved.has(String(template._id)) },
+      canEdit,
     });
   })
 );
@@ -475,6 +641,9 @@ router.put(
   '/:id',
   verifyToken,
   requireRole('developer', 'admin'),
+  // §11: only a multipart edit (one that writes to disk) is charged to the
+  // uploads switch; a JSON typo fix still goes through.
+  uploadsFlagGate,
   handleUpload,
   asyncHandler(async (req, res) => {
     const template = await Template.findById(req.params.id);
@@ -576,6 +745,37 @@ router.put(
       if (template.changelog.length > 20) template.changelog = template.changelog.slice(0, 20);
     }
 
+    // Spec §8: re-run the duplicate check when any of its signals changed.
+    // Title, source URL and the archive bytes are the evidence -- editing an
+    // unrelated field leaves the previous verdict standing instead of
+    // quietly clearing an admin's open warning.
+    const signalsChanged =
+      uploads.file || updates.title !== undefined || updates.githubUrl !== undefined;
+    if (signalsChanged) {
+      const fileHash = uploads.file ? await hashStoredFile(uploads.file.key) : template.file?.hash || '';
+      const matches = await detectDuplicates({
+        title: updates.title ?? template.title,
+        githubUrl: updates.githubUrl ?? template.githubUrl,
+        hash: fileHash,
+        authorId: template.author,
+        excludeId: template._id,
+      });
+      template.duplicateCheck = matches.length
+        ? { checkedAt: new Date(), matches, reviewed: false }
+        : { checkedAt: new Date(), matches: [], reviewed: false };
+      if (uploads.file && fileHash) template.file = { ...template.file, hash: fileHash };
+
+      if (matches.length) {
+        recordSecurityEvent('upload.duplicate', {
+          req,
+          severity: 'warning',
+          actorId: template.author,
+          roleAtEvent: req.user.role,
+          meta: { templateId: String(template._id), title: template.title, matches: matches.length },
+        });
+      }
+    }
+
     await template.save();
 
     // Only unlink old files once the new document is safely persisted.
@@ -637,6 +837,9 @@ router.post(
   },
   verifyToken,
   requireActive,
+  // §11: favourites are a switch. Un-saving stays possible (it only ever
+  // removes a row), so the gate sits on the write that adds one.
+  flagGate('favorites'),
   asyncHandler(async (req, res) => {
     const template = await Template.findById(req.params.id).select('_id status author');
     if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {
@@ -724,6 +927,9 @@ router.post(
   },
   verifyToken,
   requireActive,
+  // §11: reporting is a switch; moderation can be paused without stopping
+  // the rest of the site.
+  flagGate('reports'),
   asyncHandler(async (req, res) => {
     const template = await Template.findById(req.params.id).select('_id status author');
     if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {
@@ -748,7 +954,23 @@ router.post(
         templateId: template._id,
         reason,
         description,
+        // §20: the queue's starting priority comes from the claim itself --
+        // a malicious-content report IS more urgent than a broken demo, and
+        // that judgement is derived from real input, not invented.
+        priority: Report.REASON_PRIORITY[reason] || 'normal',
       });
+
+      // §9: a malicious-content claim is suspicious activity worth logging
+      // alongside everything else, whether or not it turns out to be true.
+      if (reason === 'Malicious/suspicious content') {
+        recordSecurityEvent('report.malicious', {
+          req,
+          severity: 'warning',
+          actorId: req.user.id,
+          roleAtEvent: req.user.role,
+          meta: { templateId: String(template._id), reportId: String(report._id) },
+        });
+      }
 
       return res.status(201).json({
         success: true,
@@ -784,6 +1006,10 @@ router.post(
   },
   verifyToken,
   requireActive,
+  // §11: downloads are a switch. Mounted after the login prompts so an
+  // anonymous visitor is still told to log in first, and a signed-in visitor
+  // gets the switch's own message when downloads are off.
+  flagGate('downloads'),
   asyncHandler(async (req, res) => {
     const template = await Template.findOne({ slug: req.params.slug });
     if (!template || (!canManage(template, req.user) && template.status !== 'approved')) {

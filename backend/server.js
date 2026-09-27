@@ -91,12 +91,25 @@ const apiLimiter = rateLimit({
 });
 
 // Credential stuffing is the main risk on these two endpoints.
+const recordSecurityEvent = require('./services/securityEvent');
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Too many attempts, please try again in 15 minutes' },
+  // Spec §9 tracks "multiple failed authentication attempts". Burning this
+  // budget IS that pattern, so the moment it happens it becomes a critical
+  // security event -- and the reply itself is unchanged (same status, same
+  // message, same RateLimit headers the limiter already set).
+  handler: (req, res) => {
+    recordSecurityEvent('auth.rate_limited', {
+      req,
+      severity: 'critical',
+      meta: { path: req.path },
+    });
+    res.status(429).json({ error: 'Too many attempts, please try again in 15 minutes' });
+  },
 });
 
 // Spec §21 wants the sensitive endpoints covered individually, not only by the
@@ -148,15 +161,34 @@ app.post('/api/templates/:id/report', reportLimiter);
 // ===== DATABASE =====
 mongoose.connection.on('error', (err) => console.error('❌ MongoDB error:', err.message));
 
+// ===== MAINTENANCE (spec §12) =====
+// In front of every route: when full maintenance is on, non-admins get the
+// admin's message instead of the feature. It sits behind the rate limiters
+// (a maintenance wall should not become the cheapest un-throttled surface)
+// and lets /api/platform plus the auth endpoints through so the site can
+// explain itself and an admin can still sign in to turn it off.
+const { maintenanceGate } = require('./middleware/platform');
+app.use('/api', maintenanceGate);
+
 // ===== ROUTES =====
 const verifyToken = require('./middleware/auth');
 
+// Public platform payload (spec §3/§11/§12/§13): flags, layout,
+// announcements and spotlight in one boot-time call.
+app.use('/api/platform', require('./routes/platform'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/meta', require('./routes/meta'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/developers', require('./routes/developers'));
+// The admin surface is four routers on one prefix: the original decisions
+// log (admin.js), curation (adminContent), trust/quality (adminTrust) and
+// platform operations (adminOps). Every one of them opens with the same
+// verifyToken + requireRole('admin') guard.
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/admin', require('./routes/adminContent'));
+app.use('/api/admin', require('./routes/adminTrust'));
+app.use('/api/admin', require('./routes/adminOps'));
 // Spec §12. Mounted as its own resource so the navbar bell does not have to
 // reach into /api/users for something that is not a user setting.
 app.use('/api/notifications', require('./routes/notifications'));

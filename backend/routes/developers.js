@@ -3,7 +3,9 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const asyncHandler = require('../middleware/asyncHandler');
+const { flagGate } = require('../middleware/platform');
 const { safeRegex } = require('../utils/safeRegex');
+const publicTemplate = require('../utils/publicTemplate');
 const User = require('../models/User');
 const Template = require('../models/Template');
 
@@ -19,11 +21,23 @@ const PROFILE_ROLES = ['developer', 'admin'];
 
 /** Public profile shape -- never includes email or any internal field. */
 function publicDeveloper(user, stats = {}) {
+  // Spec §14: the bio an admin edited replaces the developer's own text, and
+  // a hidden bio is withheld (the profile still exists -- only the prose is
+  // withheld, nothing is deleted).
+  const content = user.content || {};
+  const bioHidden = content.state === 'hidden';
+  const bio = bioHidden ? '' : content.editedBio || user.bio || '';
+
   return {
     id: user._id,
     name: user.name,
     avatar: user.avatar || '',
-    bio: user.bio || '',
+    bio,
+    bioHidden,
+    // Spec §7's public face: 'trusted'/'verified' exist only because an admin
+    // set them, so showing them reports that judgement rather than inventing
+    // one. 'new' and 'active' stay internal -- no badge, no claim.
+    trustBadge: ['trusted', 'verified'].includes(user.trustLevel) ? user.trustLevel : null,
     // Deliberate, and reviewed: this endpoint only ever serves accounts with
     // role developer/admin (the query filters on it), and the profile page
     // renders the value as its "Admin"/"Developer" badge. What it can never
@@ -64,8 +78,10 @@ async function statsFor(authorId) {
 
 // ===== LIST DEVELOPERS =====
 // GET /api/developers?q=&page=&limit=
+// §11: the whole directory sits behind the public-developer-profiles switch.
 router.get(
   '/',
+  flagGate('publicDeveloperProfiles'),
   asyncHandler(async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 12));
@@ -75,8 +91,15 @@ router.get(
     if (q) {
       // One escaped pattern shared by both fields. It used to be built twice
       // from the same input -- same escape, same flags, two objects.
+      //
+      // §14: a hidden bio must not be findable -- search matches the bio only
+      // while it is visible/flagged, and it matches the admin's edited version
+      // when one exists (that is the text the public page actually shows).
       const rx = safeRegex(q, 60);
-      query.$or = [{ name: rx }, { bio: rx }];
+      query.$or = [
+        { name: rx },
+        { 'content.state': { $ne: 'hidden' }, $or: [{ bio: rx }, { 'content.editedBio': rx }] },
+      ];
     }
 
     const [users, total] = await Promise.all([
@@ -116,6 +139,7 @@ router.get(
 // GET /api/developers/:id
 router.get(
   '/:id',
+  flagGate('publicDeveloperProfiles'),
   asyncHandler(async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(404).json({ error: 'Developer not found' });
@@ -133,6 +157,7 @@ router.get(
 // GET /api/developers/:id/templates
 router.get(
   '/:id/templates',
+  flagGate('publicDeveloperProfiles'),
   asyncHandler(async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(404).json({ error: 'Developer not found' });
@@ -149,7 +174,9 @@ router.get(
       // matter how many submissions they had.
       .limit(200);
 
-    res.json({ success: true, templates });
+    // Same public projection as the catalogue: no quality score, duplicate
+    // matches or moderation plumbing on a public profile page.
+    res.json({ success: true, templates: templates.map((t) => publicTemplate(t)) });
   })
 );
 
