@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import api, { getErrorMessage } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useFavorite } from '../lib/favorites';
+import usePresence from '../lib/usePresence';
 import { downloadTemplate } from '../lib/download';
 import { useToast } from '../components/Common/Toast';
 import ShareButton from '../components/Common/ShareButton';
@@ -32,8 +33,15 @@ export default function TemplateDetails() {
   const [activeShot, setActiveShot] = useState(0);
   // Download follows Download -> Downloading... -> Downloaded (§16).
   const [phase, setPhase] = useState('idle');
-  // Index of the screenshot shown in the lightbox, or null when closed (§23).
+  // Index of the screenshot shown in the lightbox, or null when nothing has
+  // been opened yet (§23). It deliberately survives a close so the exit
+  // animation still has a picture to fade out -- see `lightboxOpen`.
   const [lightbox, setLightbox] = useState(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const lbOpener = useRef(null);
+  // Kept mounted for ~200ms after dismissal so the exit animation can play
+  // instead of the overlay vanishing mid-reach (§23 "Closing should be smooth").
+  const [lbPresent, lbClosing] = usePresence(lightboxOpen);
   // Spec §7: reporting is a dialog, not a `mailto:` buried in the footer.
   const [reporting, setReporting] = useState(false);
   const resetTimer = useRef(null);
@@ -98,17 +106,19 @@ export default function TemplateDetails() {
 
   // Lightbox keyboard support (anim guide §23/§25): Escape closes, the
   // arrow keys step through the gallery, and the page behind is locked so
-  // it cannot scroll away under the overlay.
+  // it cannot scroll away under the overlay. The opener is remembered so
+  // focus lands back on the screenshot rather than at the top of the page.
   useEffect(() => {
-    if (lightbox === null || shots.length === 0) return undefined;
+    if (!lightboxOpen || shots.length === 0) return undefined;
 
     const onKey = (e) => {
-      if (e.key === 'Escape') setLightbox(null);
+      if (e.key === 'Escape') setLightboxOpen(false);
       else if (e.key === 'ArrowRight') setLightbox((i) => (i + 1) % shots.length);
       else if (e.key === 'ArrowLeft') setLightbox((i) => (i - 1 + shots.length) % shots.length);
     };
 
     window.addEventListener('keydown', onKey);
+    lbOpener.current = document.activeElement;
     // Keyboard-first: focus lands on Close so Tab/Escape work immediately.
     closeRef.current?.focus();
     const previousOverflow = document.body.style.overflow;
@@ -116,8 +126,14 @@ export default function TemplateDetails() {
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = previousOverflow;
+      const opener = lbOpener.current;
+      lbOpener.current = null;
+      if (opener && typeof opener.focus === 'function' && opener.isConnected) opener.focus();
     };
-  }, [lightbox, shots.length]);
+    // `lightbox` is intentionally not a dependency: stepping through the
+    // gallery uses the functional updater, and adding it here would hand focus
+    // back to the opener on every arrow press.
+  }, [lightboxOpen, shots.length]);
 
   const handleDownload = async () => {
     if (phase === 'busy') return;
@@ -213,7 +229,10 @@ export default function TemplateDetails() {
                 {activeImage ? (
                   <button
                     type="button"
-                    onClick={() => setLightbox(activeShot)}
+                    onClick={() => {
+                      setLightbox(activeShot);
+                      setLightboxOpen(true);
+                    }}
                     aria-label={`View ${template.title} screenshot ${activeShot + 1} fullscreen`}
                     className="absolute inset-0 block h-full w-full cursor-zoom-in overflow-hidden"
                   >
@@ -571,13 +590,13 @@ export default function TemplateDetails() {
       />
 
       {/* ------------------------------------------------ lightbox (§23) */}
-      {lightbox !== null && shots[lightbox] && (
+      {lbPresent && lightbox !== null && shots[lightbox] && (
         <div
-          className="ui-lightbox"
+          className={`ui-lightbox${lbClosing ? ' is-closing' : ''}`}
           role="dialog"
           aria-modal="true"
           aria-label={`${template.title} screenshots`}
-          onClick={() => setLightbox(null)}
+          onClick={() => setLightboxOpen(false)}
         >
           <div className="ui-lightbox__scrim" />
 
@@ -624,7 +643,7 @@ export default function TemplateDetails() {
             aria-label="Close fullscreen preview"
             onClick={(e) => {
               e.stopPropagation();
-              setLightbox(null);
+              setLightboxOpen(false);
             }}
           >
             ×

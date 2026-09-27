@@ -1,16 +1,27 @@
-# React + Vite
+# web craft — frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React 19 + Vite + Tailwind CSS 4 single-page app for **web craft**, the free
+template marketplace.
 
-Currently, two official plugins are available:
+This folder is the `frontend/` half of a two-part project. **Setup, environment
+variables and commands all live in the [root README](../README.md)** — that is
+the only document to follow.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+# from the repository root
+npm run setup    # installs backend + frontend dependencies
+npm run dev      # API on :8080, this app on :5173
+```
 
-## React Compiler
+Layout:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Path | Purpose |
+|---|---|
+| `src/pages/**` | One component per route (`App.jsx` maps them) |
+| `src/components/**` | Reusable UI — `Templates/`, `Common/`, `Auth/` |
+| `src/lib/` | `api.js` (axios + error mapping), `seo.js`, `session.js`, `format.js` |
+| `src/index.css` | Design tokens, `ui-*` component classes, animations |
+| `public/` | Static assets served at the site root |
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+> This is not a standalone Vite starter — do not run `npm create vite` in here
+> or replace `index.html`/`vite.config.js`.

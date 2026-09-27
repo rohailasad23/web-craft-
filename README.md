@@ -17,6 +17,19 @@ Everything in V1 is **free**. There are no payments, subscriptions or premium ti
 
 ---
 
+## Requirements
+
+| | Minimum | Notes |
+|---|---|---|
+| **Node.js** | 20 LTS or newer | Needs global `fetch` (built in since 18). `node -v` to check. |
+| **npm** | 9+ | Ships with Node. |
+| **MongoDB** | none locally | With `DB_MODE=auto` (the default) the API downloads and runs a local MongoDB under `backend/.data/mongo` if it cannot reach your `MONGODB_URI`. You only *need* a server — local or Atlas — if you want persistent data across `rm -rf backend/.data`. |
+
+No Docker, no Redis, no global CLIs. Everything else installs with
+`npm run setup`.
+
+---
+
 ## Quick start
 
 ```bash
@@ -65,6 +78,18 @@ Anyone can move between the two from **Profile → Account type** (or the
 *Become a developer* card on the dashboard). The API only ever accepts `user`
 or `developer` for that field — `admin` is rejected with a 400, and
 administrator accounts cannot switch at all.
+
+### How to register
+
+1. Click **Sign up** (top-right) or open `/register`.
+2. Enter name, email and password, then choose **User** (browse and download)
+   or **Developer** (publish from day one).
+3. You are signed in immediately and stay signed in across a refresh — the
+   session is re-read from `GET /api/auth/me` on every page load.
+
+Passwords are bcrypt-hashed before they reach the database, the server only
+ever accepts the role `user` or `developer` (`admin` in the request is rejected
+with 400), and existing accounts can switch between the two later.
 
 ### How to become a developer
 
@@ -178,6 +203,42 @@ frontend/
 
 ---
 
+## Account security — what runs today, what needs a mail provider
+
+**Implemented and active**
+
+- bcrypt hashing on the `User` pre-save hook; `passwordHash` is `select: false`
+  and is never serialised into an API response.
+- JWT sessions re-read the account on every load, so a suspended account or a
+  changed role takes effect on the next request instead of waiting for the
+  token to expire.
+- **Change password** requires the current password, re-hashes the new one and
+  is rate limited alongside login and registration.
+- Rate limits: login/register/password-change 20 per 15 min, template upload 15
+  per 15 min, reports 30 per 15 min, everything else 300 per 15 min.
+
+**Deliberately not built — it needs a real mail provider**
+
+Email verification and password reset are **not implemented**. The spec is
+explicit that a fake mail system must not be shipped, so the structure is left
+open rather than faked. To finish it later you need:
+
+1. An SMTP or transactional provider (Resend, Postmark, SES…) and its key in
+   `backend/.env`.
+2. `verificationToken` and `resetToken` (with expiry) fields on
+   `backend/models/User.js`.
+3. Three routes in `backend/routes/auth.js` — `POST /auth/register` (issue),
+   `POST /auth/verify/:token`, `POST /auth/forgot-password` and
+   `POST /auth/reset-password` — each behind the existing `authLimiter` so the
+   "request a reset" endpoint cannot be abused for mail bombing.
+4. A row in the existing `Notification` collection so the prompt also appears
+   in the bell.
+
+Nothing else changes: authentication, sessions and the user model are already
+the single place this plugs into.
+
+---
+
 ## Testing
 
 ```bash
@@ -186,8 +247,12 @@ npm run smoke
 
 The smoke test spawns its own API on a scratch port against its own MongoDB
 (`web-craft-smoke`, port 27018) so it never touches your working data. It runs
-**108 checks** covering registration and login, role enforcement, template CRUD
-and ownership, upload limits, download streaming and de-duplication, developer
-profiles, search/filter/pagination, account settings and error handling.
+**238 checks** covering authentication and session handling, role protection,
+template upload and its validation (extension, MIME, size and the file's real
+byte signature), listing/search/pagination, downloads and de-duplication, saved
+templates, developer profiles and analytics, account settings and password
+changes, versioning and changelogs, reporting, admin moderation with its
+notifications and audit log, account suspension, CORS preflight, rate limiting
+and error handling.
 
 It exits non-zero on any failure, so it can gate CI.

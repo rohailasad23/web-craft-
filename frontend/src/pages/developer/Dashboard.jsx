@@ -127,7 +127,7 @@ export default function DeveloperDashboard() {
                           aria-label={`${t.title}: ${t.downloadCount} downloads`}
                         >
                           <div
-                            className="h-full origin-left rounded-full bg-gradient-to-r from-brand-500 to-brand-700 transition-transform duration-700"
+                            className="h-full origin-left rounded-full bg-gradient-to-r from-brand-500 to-brand-700 transition-transform duration-500"
                             style={{
                               // scaleX rather than width: the track already
                               // clips (overflow-hidden + rounded-full), so the

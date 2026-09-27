@@ -131,6 +131,23 @@
   from { opacity: 0; transform: scale(0.965); }
   to { opacity: 1; transform: none; }
 }
+/* ... and every overlay leaves the same way it arrived. Without these the
+   element unmounts on the frame the user dismisses it, which reads as a
+   glitch rather than a close (anim guide §18 "Closing: smooth reverse
+   animation", §23 "Closing should also be smooth"). Kept short -- an exit the
+   user is waiting on must never outlast ~200ms. */
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes modal-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.985); }
+}
+@keyframes lightbox-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.97); }
+}
 @keyframes float {
   0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
   50% { transform: translate3d(0, -26px, 0) rotate(6deg); }
@@ -211,11 +228,37 @@
       box-shadow 0.3s var(--ease-out-quint),
       border-color 0.25s ease;
   }
-  /* Anim guide §4: lift a few pixels, not a jump -- -4px, never more. */
-  .ui-card--hover:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lift);
-    border-color: var(--color-brand-200);
+  /* Anim guide §4: lift a few pixels, not a jump -- -4px, never more.
+     Anim guide §25: the lift is a pointer affordance. On touch, :hover sticks
+     after the tap that opened the link, so the card would sit raised until the
+     next tap anywhere -- the transform therefore only exists where there is a
+     real mouse. Everything else about the card (colour, focus ring, :active)
+     still works without a pointer. */
+  @media (hover: hover) and (pointer: fine) {
+    .ui-card--hover:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lift);
+      border-color: var(--color-brand-200);
+    }
+  }
+
+  /* --- Overlay ---------------------------------------------------
+     The modal owns its own animation classes rather than the shared
+     `animate-fade-*` utilities, because closing has to swap the keyframes for
+     a reverse. `.is-closing` is applied by <Modal /> for the ~180ms it stays
+     mounted after `open` goes false. */
+  .ui-modal__overlay {
+    animation: fade-in 0.2s ease-out both; /* anim guide §18: backdrop 200ms */
+  }
+  .ui-modal__overlay.is-closing {
+    animation: fade-out 0.16s ease-in both;
+    pointer-events: none; /* no stray clicks while it fades */
+  }
+  .ui-modal__panel {
+    animation: fade-up 0.3s var(--ease-out-quint) both; /* §18: panel 300ms */
+  }
+  .ui-modal__panel.is-closing {
+    animation: modal-out 0.18s ease-in both;
   }
 
   .ui-panel {
@@ -244,7 +287,12 @@
     cursor: pointer;
     user-select: none;
   }
-  .ui-btn:hover { transform: translateY(-2px); }
+  /* Same reasoning as the card above: the lift is gated behind a real pointer
+     so a tap does not leave the button standing 2px proud of the page.
+     `:active` stays ungated -- that is the feedback a finger gets. */
+  @media (hover: hover) and (pointer: fine) {
+    .ui-btn:hover { transform: translateY(-2px); }
+  }
   .ui-btn:active { transform: translateY(0) scale(0.98); }
   .ui-btn:disabled {
     opacity: 0.55;
@@ -260,9 +308,14 @@
     color: #fff;
     box-shadow: var(--shadow-soft);
   }
-  .ui-btn--primary:hover {
-    background-position: 100% 50%;
-    box-shadow: var(--shadow-glow);
+  /* The gradient shift is a pointer-only polish too -- see the touch guard on
+     `.ui-btn:hover`. Gating it also means the repaint §27 warns about never
+     runs on a device that has no pointer to sweep with. */
+  @media (hover: hover) and (pointer: fine) {
+    .ui-btn--primary:hover {
+      background-position: 100% 50%;
+      box-shadow: var(--shadow-glow);
+    }
   }
 
   .ui-btn--success {
@@ -544,6 +597,23 @@
 .stagger > *:nth-child(9) { animation-delay: 0.4s; }
 .stagger > *:nth-child(10) { animation-delay: 0.45s; }
 
+/* Anim guide §9 -- "sections can animate into view when the user scrolls".
+   Without this, a below-the-fold grid plays its whole reveal on mount, to an
+   empty screen, and the visitor never sees it: the effect is spent before it
+   is useful.
+
+   `useScrollReveal` adds `.will-reveal` only to containers that are still
+   under the fold when they appear, and the IntersectionObserver strips it off
+   again the moment they arrive. Anything already on screen is never touched
+   (it animates on mount exactly as before), and an IntersectionObserver always
+   delivers an initial callback -- so visible content can never be left at
+   opacity 0. Cancelling the animation by name (rather than pausing it) leaves
+   the nth-child delays above untouched, so the stagger survives intact. */
+.stagger.will-reveal > * {
+  animation-name: none;
+  opacity: 0;
+}
+
 /* Reveal on hover -- icons, arrows, secondary actions */
 .reveal-hover {
   opacity: 0;
@@ -565,6 +635,25 @@
 .ui-magnetic {
   display: inline-flex;
   transition: transform 0.3s var(--ease-out-quint);
+}
+
+/* ============================================================
+   UPLOAD PROGRESS (core spec §6 -- "Show upload progress if file
+   upload supports it"). Width is driven through scaleX rather than
+   an animated `width` (perf guide §36): the bar only ever composites.
+   ============================================================ */
+.ui-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-ink-100);
+  overflow: hidden;
+}
+.ui-progress__fill {
+  height: 100%;
+  transform: scaleX(var(--p, 0));
+  transform-origin: left;
+  background-image: linear-gradient(90deg, var(--color-brand-500), var(--color-brand-700));
+  transition: transform 0.2s linear;
 }
 
 /* ============================================================
@@ -645,6 +734,27 @@
   font-weight: 700;
   color: #fff;
   letter-spacing: 0.08em;
+}
+
+/* Closing (anim guide §23: "Closing should also be smooth"). <TemplateDetails />
+   keeps the lightbox mounted for ~180ms after dismissal and flags it with
+   `.is-closing`, so the scrim and image run their entry animations backwards
+   instead of the whole overlay blinking out mid-reach for the close button. */
+.ui-lightbox.is-closing {
+  /* The overlay is on its way out: a stray tap must not step the gallery
+     underneath the fade. */
+  pointer-events: none;
+}
+.ui-lightbox.is-closing .ui-lightbox__scrim {
+  animation: fade-out 0.16s ease-in both;
+}
+.ui-lightbox.is-closing .ui-lightbox__img {
+  animation: lightbox-out 0.18s ease-in both;
+}
+.ui-lightbox.is-closing .ui-lightbox__nav,
+.ui-lightbox.is-closing .ui-lightbox__close,
+.ui-lightbox.is-closing .ui-lightbox__count {
+  animation: fade-out 0.12s ease-in both;
 }
 
 /* ============================================================

@@ -1253,6 +1253,42 @@ async function run() {
     );
   }
 
+  /* ---------------------------------------------------- rate limiting (§40) */
+  // The SECURITY row of the spec's checklist is "rate limiting". A header
+  // proves the middleware is mounted; only spending the budget proves it
+  // enforces. Deliberately last: a bucket that runs dry here cannot take any
+  // other check down with it.
+  section('SECURITY: rate limiting');
+  {
+    // Multipart, because that -- and only that -- is what this budget charges.
+    const upload = () => req('POST', '/api/templates', { token: devToken, body: new FormData() });
+    const probe = await upload();
+    const headerNames = [...probe.res.headers.keys()].filter((k) => k.startsWith('ratelimit'));
+    check(
+      'upload route emits RateLimit headers',
+      headerNames.length > 0,
+      headerNames.join(', ') || 'none'
+    );
+
+    // The limiter is 15 per 15 minutes and earlier upload attempts have
+    // already spent part of that, so this walks the rest of the way.
+    let spent = 1;
+    let blocked = null;
+    while (spent < 16 && !blocked) {
+      const r = await upload();
+      spent += 1;
+      if (r.res.status === 429) blocked = r;
+    }
+    check('upload limiter reaches 429 within its budget', !!blocked, `spent=${spent}`);
+    if (blocked) {
+      check(
+        'the 429 comes from the upload budget specifically',
+        /too many uploads/i.test(blocked.data.error || ''),
+        JSON.stringify(blocked.data)
+      );
+    }
+  }
+
   section('Summary');
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) {

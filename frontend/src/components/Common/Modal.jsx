@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react';
+import usePresence from '../../lib/usePresence';
 
 const FOCUSABLE =
   'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), ' +
@@ -37,6 +38,9 @@ export default function Modal({
   const titleId = useId();
   const descId = useId();
   const titleTargetId = labelledBy || titleId;
+
+  // Holds the DOM for ~200ms after dismissal so the CSS exit can play.
+  const [present, exiting] = usePresence(open);
 
   // Open/close side effects: remember who opened us, lock the page behind,
   // take the initial focus, and put everything back afterwards.
@@ -84,14 +88,19 @@ export default function Modal({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open && !present) return null;
+  // Still mounted while the exit plays: `.is-closing` swaps the keyframes for
+  // their reverse (anim guide §18 -- closing is a state, not a disappearance).
+  const closing = exiting;
 
   return (
     <div
       // `m-auto` rather than `items-center`: flexbox centring + overflow means
       // the top of an over-tall panel becomes unreachable in every browser.
       // `m-auto` centres when it fits and scrolls cleanly when it does not.
-      className="fixed inset-0 z-[60] flex animate-fade-in bg-ink-900/45 p-4 backdrop-blur-[2px]"
+      className={`ui-modal__overlay fixed inset-0 z-[60] flex bg-ink-900/45 p-4 backdrop-blur-[2px]${
+        closing ? ' is-closing' : ''
+      }`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -103,7 +112,9 @@ export default function Modal({
         aria-labelledby={titleTargetId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
-        className={`ui-card m-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col !p-0 shadow-lift animate-fade-up ${panelClassName}`}
+        className={`ui-modal__panel ui-card m-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col !p-0 shadow-lift ${
+          closing ? 'is-closing ' : ''
+        }${panelClassName}`}
       >
         <div className="shrink-0 px-6 pb-2 pt-6">
           <h2 id={titleId} className="text-base font-bold text-ink-900">

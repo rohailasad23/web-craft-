@@ -20,6 +20,7 @@ import { ToastProvider } from './components/Common/Toast';
 import { ConfirmProvider } from './components/Common/ConfirmDialog';
 import { SessionContext } from './lib/session';
 import { loadCatalog } from './lib/catalog';
+import useScrollReveal from './lib/reveal';
 import api, { setSuspendedSession } from './lib/api';
 
 import DeveloperDashboard from './pages/developer/Dashboard';
@@ -81,6 +82,11 @@ function AppShell({ session, onLogin, onLogout, onRefresh }) {
   useEffect(() => {
     loadCatalog();
   }, []);
+
+  // Anim guide §9: grids below the fold reveal as they are scrolled to rather
+  // than on mount (when nobody is looking). One app-wide observer covers every
+  // route, because grids only exist once their data has landed.
+  useScrollReveal();
 
   // Fired by the shared axios client the first time an action is refused
   // because the account was suspended (spec §9). Re-reading /me is what puts

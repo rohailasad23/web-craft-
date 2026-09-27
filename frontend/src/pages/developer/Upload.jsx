@@ -54,6 +54,10 @@ export default function UploadTemplate() {
   const [customTech, setCustomTech] = useState('');
   const [tagDraft, setTagDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  // Spec §6: "Show upload progress if file upload supports it". `null` means
+  // there is nothing worth showing yet (no request, or a transport that does
+  // not report a total) so no half-empty bar is ever rendered.
+  const [progress, setProgress] = useState(null);
   const [loading, setLoading] = useState(isEdit);
   const [error, setError] = useState('');
   const [touched, setTouched] = useState(false);
@@ -255,9 +259,18 @@ export default function UploadTemplate() {
       // append: FormData.set() replaces an existing key of the same name.
       screenshots.forEach((shot) => body.append('screenshots', shot, shot.name));
 
+      // Spec §6: bytes actually leaving the browser. The browser computes
+      // Content-Length for a FormData body, so `total` is reliable here --
+      // and when it is not, we simply show the spinner instead of a bar that
+      // sits at 0% and then jumps.
+      const onUploadProgress = (event) => {
+        if (!event.total) return;
+        setProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      };
+
       const res = isEdit
-        ? await api.put(`/api/templates/${id}`, body)
-        : await api.post('/api/templates', body);
+        ? await api.put(`/api/templates/${id}`, body, { onUploadProgress })
+        : await api.post('/api/templates', body, { onUploadProgress });
 
       const saved = res.data.template;
       toast.success(isEdit ? 'Template updated' : 'Template published');
@@ -272,6 +285,7 @@ export default function UploadTemplate() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   };
 
@@ -783,6 +797,19 @@ export default function UploadTemplate() {
             >
               Cancel
             </Link>
+            {saving && progress !== null && (
+              // Visual only: the button label ("Publishing…") is the state a
+              // screen reader gets, so a percentage ticking five times a
+              // second is never pushed into a live region.
+              <div className="min-w-[13rem] flex-1" aria-hidden="true">
+                <div className="ui-progress">
+                  <div className="ui-progress__fill" style={{ '--p': String(progress / 100) }} />
+                </div>
+                <p className="mt-2 text-xs font-semibold text-ink-600">
+                  {progress < 100 ? `Uploading… ${progress}%` : 'Processing on the server…'}
+                </p>
+              </div>
+            )}
           </div>
         </form>
       </main>

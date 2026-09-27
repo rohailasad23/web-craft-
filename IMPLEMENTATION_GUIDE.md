@@ -2,11 +2,23 @@
 
 
 > [!IMPORTANT]
-> The codebase has been refactored since this guide was written. The source
-> tree, `backend/.env.example` and `backend/scripts/smoke.js` are the
-> authoritative reference — some snippets below are historical and no longer
-> match the implementation exactly (error handling, AI provider fallback,
-> security middleware and editor saving have all changed).
+> **This file is legacy and describes a different product.**
+>
+> It was written for the *Landing Page Builder* this repository used to be.
+> The project now lives here as **web craft**, a free template marketplace.
+> Everything below that mentions AI generation, Razorpay, paid tiers or a
+> pricing strategy describes features that **do not exist in this repository
+> and must not be added** — §25 and §39 of the brief rule out payments,
+> subscriptions, pricing and premium tiers for V1 entirely.
+>
+> What is still accurate is the shape of the commands:
+> `npm run setup`, `npm run dev` (API :8080, web :5173), `npm run smoke`.
+> The source tree, `README.md`, `backend/.env.example` and
+> `backend/scripts/smoke.js` are the authoritative reference — some snippets
+> below are historical and no longer match the implementation (error handling,
+> AI provider fallback, security middleware and editor saving have all changed).
+>
+> Kept for history only. For how anything works *today*, start at `README.md`.
 >
 > Quick start:
 > ```bash

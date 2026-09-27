@@ -125,8 +125,24 @@ app.use('/api/auth/register', authLimiter);
 // the same budget as login rather than the generic one.
 app.use('/api/auth/change-password', authLimiter);
 // Mounted with the method, not the path: GET /api/templates is the whole
-// catalogue and must never be throttled at 15 requests.
-app.post('/api/templates', uploadLimiter);
+// catalogue and must never be throttled at 15 requests. The generic 300/15-min
+// still covers the reads.
+//
+// Spec §21 rates "template upload" -- and only a multipart body ever reaches
+// multer, so only a multipart body is charged this budget. A JSON edit writes
+// nothing to disk and stays under the general ceiling, which is what stops a
+// developer polishing their listing from spending their own upload allowance
+// halfway through it (the first version charged every PUT: five metadata edits
+// emptied the bucket and the sixth came back 429).
+const uploadsOnly = (req, res, next) =>
+  /^multipart\/form-data\b/i.test(String(req.headers['content-type'] || ''))
+    ? uploadLimiter(req, res, next)
+    : next();
+
+app.post('/api/templates', uploadsOnly);
+// Replacing an archive is the same disk write as creating one, so it is charged
+// the same budget -- but only when a file is actually on its way in.
+app.put('/api/templates/:id', uploadsOnly);
 app.post('/api/templates/:id/report', reportLimiter);
 
 // ===== DATABASE =====

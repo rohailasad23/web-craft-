@@ -116,35 +116,114 @@ const archiveUpload = upload.fields([
   { name: 'screenshots', maxCount: LIMITS.screenshots },
 ]);
 
+/* ------------------------------------------------------------- content */
+/*
+ * Spec §20: "Never trust the extension alone."
+ *
+ * The extension and the MIME type are both the client's claim about its own
+ * bytes -- an <input type=file> accepts any name with any type string, so
+ * phish.html arrives as image/png. The first bytes on disk are not a claim.
+ */
+function matchesMagic(head, ext) {
+  const at = (hex, offset = 0) => {
+    const sig = Buffer.from(hex, 'hex');
+    if (head.length < offset + sig.length) return false;
+    return head.subarray(offset, offset + sig.length).equals(sig);
+  };
+  switch (ext) {
+    case 'zip':
+      // PK\x03\x04 local header, PK\x05\x06 empty archive, PK\x07\x08 spanned.
+      return at('504b0304') || at('504b0506') || at('504b0708');
+    case 'png':
+      return at('89504e470d0a1a0a');
+    case 'jpg':
+    case 'jpeg':
+      return at('ffd8ff');
+    case 'gif':
+      return at('47494638'); // GIF87a / GIF89a
+    case 'webp':
+      return at('52494646') && at('57454250', 8); // RIFF....WEBP
+    default:
+      return false;
+  }
+}
+
+/** Read the head of a stored file and say whether it is what its name claims. */
+async function reallyIs(filePath, ext) {
+  let handle;
+  try {
+    handle = await fs.promises.open(filePath, 'r');
+    const head = Buffer.alloc(16);
+    const { bytesRead } = await handle.read(head, 0, 16, 0);
+    return matchesMagic(head.subarray(0, bytesRead), ext);
+  } catch {
+    // A file we cannot even read is a file we must not keep.
+    return false;
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+  }
+}
+
+/** Everything multer wrote, removed -- a rejected upload leaves no bytes. */
+function discard(files) {
+  for (const list of Object.values(files || {})) {
+    for (const f of list || []) {
+      try {
+        fs.rmSync(f.path, { force: true });
+      } catch {
+        // Best effort: a stray temp file must never turn into a 500.
+      }
+    }
+  }
+}
+
+/**
+ * Post-write checks. Multer's size budget has to be the ARCHIVE's 25MB (see
+ * above), so images are checked against their own 5MB cap here, and then every
+ * file is matched against its real signature rather than its name.
+ *
+ * Returns `{ status, error }` for the first problem, or null when it is clean.
+ */
+async function inspectUploads(files) {
+  for (const [field, list] of Object.entries(files || {})) {
+    for (const f of list || []) {
+      if (field !== 'file' && f.size > LIMITS.image) {
+        return {
+          status: 413,
+          error: `Images must be ${Math.round(LIMITS.image / 1024 / 1024)}MB or less`,
+        };
+      }
+      const ext = path.extname(f.originalname || '').toLowerCase().slice(1);
+      if (!ext || !(await reallyIs(f.path, ext))) {
+        return {
+          status: 400,
+          error:
+            field === 'file'
+              ? 'That file is not a valid .zip archive'
+              : 'That image is not a real PNG, JPEG, GIF or WebP file',
+        };
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Wrap multer so its errors come back as the same friendly JSON the rest of
  * the API returns, instead of an HTML stack trace.
  */
 function handleUpload(req, res, next) {
-  archiveUpload(req, res, (err) => {
+  archiveUpload(req, res, async (err) => {
     if (!err) {
-      // multer has written the files by now, but its size limit had to be the
-      // archive's 25MB (see above) -- so images are checked against their own
-      // 5MB cap here. Anything over is deleted immediately, so a rejected
-      // upload never leaves bytes on disk.
-      const oversized = [];
-      for (const [field, files] of Object.entries(req.files || {})) {
-        if (field === 'file') continue;
-        for (const f of files || []) {
-          if (f.size > LIMITS.image) oversized.push(f);
-        }
+      let problem = null;
+      try {
+        problem = await inspectUploads(req.files || {});
+      } catch {
+        problem = { status: 400, error: 'Could not read that upload, please try again' };
       }
-      if (oversized.length) {
-        for (const f of oversized) {
-          try {
-            fs.rmSync(f.path, { force: true });
-          } catch {
-            // Best effort: a stray temp file must never turn into a 500.
-          }
-        }
-        return res.status(413).json({
-          error: `Images must be ${Math.round(LIMITS.image / 1024 / 1024)}MB or less`,
-        });
+      if (problem) {
+        discard(req.files || {});
+        return res.status(problem.status).json({ error: problem.error });
       }
       return next();
     }

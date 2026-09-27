@@ -38,7 +38,17 @@ router.put(
     const updates = {};
     if (typeof req.body.name === 'string') updates.name = req.body.name.trim().slice(0, 80);
     if (typeof req.body.bio === 'string') updates.bio = req.body.bio.trim().slice(0, 500);
-    if (typeof req.body.avatar === 'string') updates.avatar = req.body.avatar.trim().slice(0, 500);
+    // Spec §10: every URL on a profile is validated before it is saved, and the
+    // avatar is a URL like any other. Blank clears it (normalizeUrl returns ''),
+    // while javascript: or data: is a 400 instead of something we later render
+    // straight into an <img src>.
+    if (typeof req.body.avatar === 'string') {
+      const avatar = normalizeUrl(req.body.avatar);
+      if (avatar === null) {
+        return res.status(400).json({ error: 'Avatar must be a valid http(s) URL' });
+      }
+      updates.avatar = avatar.slice(0, 500);
+    }
 
     // Spec §10 -- the developer half of the profile. Everything here is
     // optional, every URL goes through the same http(s)-only rule as the

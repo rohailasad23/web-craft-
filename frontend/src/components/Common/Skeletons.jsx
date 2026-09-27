@@ -50,7 +50,9 @@ export function RowSkeleton({ rows = 4 }) {
     <div className="ui-card divide-y divide-ink-100 overflow-hidden">
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="flex items-center gap-4 p-4">
-          <div className="ui-skeleton h-14 w-20 shrink-0 rounded-lg" />
+          {/* Sized to the real thumbnail (h-16 w-24 in every row list), not a
+              near-miss: a 8px difference is exactly the jump §28 forbids. */}
+          <div className="ui-skeleton h-16 w-24 shrink-0 rounded-lg" />
           <div className="flex-1 space-y-2">
             <div className="ui-skeleton h-4 w-2/5" />
             <div className="ui-skeleton h-3 w-3/5" />

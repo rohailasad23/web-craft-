@@ -9,6 +9,14 @@ const Template = require('../models/Template');
 
 const router = express.Router();
 
+/**
+ * Who has a directory page at all (spec §10). The list has always filtered on
+ * this; the profile routes used to look the account up by id alone, so a plain
+ * account could be opened at /developers/:id and rendered as "Developer" --
+ * while `publicDeveloper()` claimed the opposite.
+ */
+const PROFILE_ROLES = ['developer', 'admin'];
+
 /** Public profile shape -- never includes email or any internal field. */
 function publicDeveloper(user, stats = {}) {
   return {
@@ -63,7 +71,7 @@ router.get(
     const limit = Math.min(48, Math.max(1, parseInt(req.query.limit, 10) || 12));
     const q = String(req.query.q || '').trim().slice(0, 60);
 
-    const query = { role: { $in: ['developer', 'admin'] } };
+    const query = { role: { $in: PROFILE_ROLES } };
     if (q) {
       // One escaped pattern shared by both fields. It used to be built twice
       // from the same input -- same escape, same flags, two objects.
@@ -112,7 +120,9 @@ router.get(
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(404).json({ error: 'Developer not found' });
     }
-    const user = await User.findById(req.params.id);
+    // Same gate as the directory listing: an id on its own is not a profile,
+    // so a plain account cannot be opened here and rendered as "Developer".
+    const user = await User.findOne({ _id: req.params.id, role: { $in: PROFILE_ROLES } });
     if (!user) return res.status(404).json({ error: 'Developer not found' });
 
     res.json({ success: true, developer: publicDeveloper(user, await statsFor(user._id)) });
@@ -127,7 +137,9 @@ router.get(
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(404).json({ error: 'Developer not found' });
     }
-    const user = await User.findById(req.params.id);
+    // Same gate as the directory listing: an id on its own is not a profile,
+    // so a plain account cannot be opened here and rendered as "Developer".
+    const user = await User.findOne({ _id: req.params.id, role: { $in: PROFILE_ROLES } });
     if (!user) return res.status(404).json({ error: 'Developer not found' });
 
     const templates = await Template.find({ author: user._id, status: 'approved' })

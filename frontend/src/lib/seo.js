@@ -26,6 +26,14 @@ const DEFAULT_IMAGE = '/og.png';
 
 const ORIGIN = typeof window !== 'undefined' ? window.location.origin : '';
 
+/** `/og.png` -> `https://host/og.png`; already-absolute URLs pass through. */
+function absolutise(value, origin) {
+  if (!value) return value;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return value; // http:, https:, data:…
+  if (value.startsWith('//')) return `${origin.split('//')[0]}${value}`;
+  return `${origin}${value.startsWith('/') ? '' : '/'}${value}`;
+}
+
 function setMeta(attr, key, value) {
   const selector = `meta[${attr}="${key}"]`;
   const existing = document.head.querySelector(selector);
@@ -91,7 +99,10 @@ export function applySeo({
   setMeta('property', 'og:description', safeDescription);
   setMeta('property', 'og:url', url);
   setMeta('property', 'og:type', type);
-  setMeta('property', 'og:image', imagePath);
+  // Scrapers refuse a relative preview image, and `/uploads/...` coming back
+  // from mediaUrl() is already absolute only because API_URL is. Anything else
+  // is made absolute here so a thumbnail always survives.
+  setMeta('property', 'og:image', absolutise(imagePath, ORIGIN));
   setMeta('property', 'og:image:alt', safeTitle);
   // Only the bundled card has known dimensions; a template thumbnail is whatever
   // the developer uploaded, and claiming a size that is wrong is worse than
@@ -102,7 +113,7 @@ export function applySeo({
   setMeta('name', 'twitter:card', 'summary_large_image');
   setMeta('name', 'twitter:title', safeTitle);
   setMeta('name', 'twitter:description', safeDescription);
-  setMeta('name', 'twitter:image', imagePath);
+  setMeta('name', 'twitter:image', absolutise(imagePath, ORIGIN));
   setMeta('name', 'twitter:image:alt', safeTitle);
 
   setCanonical(canonical === false ? null : url);
