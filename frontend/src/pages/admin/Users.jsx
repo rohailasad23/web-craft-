@@ -211,6 +211,29 @@ export default function AdminUsers() {
   const setTrust = (level) =>
     patch(`/api/admin/users/${selected.id}/trust`, { trustLevel: level }, `Trust level: ${TRUST_LABELS[level]}`);
 
+  // §4: this modal is where a developer is SELECTED into the spotlight -- the
+  // Content page can only edit or remove whoever is already on it, so without
+  // this button the homepage spotlight could only ever be filled through the
+  // raw API.
+  const setSpotlight = async (enabled) => {
+    if (!enabled) {
+      const ok = await confirm({
+        title: 'Remove from the homepage spotlight?',
+        body: 'They leave the homepage immediately. You can add them back here at any time.',
+        confirmLabel: 'Remove',
+        tone: 'danger',
+      });
+      if (!ok) return;
+    }
+    patch(
+      `/api/admin/users/${selected.id}/spotlight`,
+      { enabled },
+      enabled
+        ? 'Added to the homepage spotlight — set the blurb, image and priority under Content → Spotlight'
+        : 'Removed from the homepage spotlight'
+    );
+  };
+
   const setBioState = async (next) => {
     if (next === 'hidden') {
       const ok = await confirm({
@@ -423,13 +446,13 @@ export default function AdminUsers() {
         </p>
       )}
 
-      {/* §7 trust, §14 bio moderation, §17 notes, §18 watch -- the four
-          judgements an admin makes about a PERSON, in one place. */}
+      {/* §7 trust, §4 spotlight, §14 bio moderation, §17 notes, §18 watch --
+          the five judgements an admin makes about a PERSON, in one place. */}
       <Modal
         open={!!selected}
         onClose={closeManage}
         title={selected ? `Manage ${selected.name}` : ''}
-        description="Trust, bio moderation and internal notes for this account. Every change lands in the audit log."
+        description="Trust, spotlight, bio moderation and internal notes for this account. Every change lands in the audit log."
         panelClassName="max-w-xl"
       >
         {selected && (
@@ -456,6 +479,36 @@ export default function AdminUsers() {
               <p className="mt-2 text-xs leading-relaxed text-ink-500">
                 Only “Trusted” and “Verified” ever appear publicly, beside the developer’s name.
                 A downgrade is recorded just like an upgrade.
+              </p>
+            </section>
+
+            <section aria-label="Homepage spotlight" className="border-t border-ink-100 pt-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-ink-500">
+                  Homepage spotlight
+                </h4>
+                <span className="text-[11px] text-ink-400">Selected by hand — never automatic</span>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={modalBusy}
+                  onClick={() => setSpotlight(!selected.spotlight?.enabled)}
+                  className={`ui-btn !py-1.5 text-sm ${
+                    selected.spotlight?.enabled ? 'ui-btn--soft' : 'ui-btn--primary'
+                  }`}
+                >
+                  {selected.spotlight?.enabled ? 'Remove from spotlight' : 'Add to homepage spotlight'}
+                </button>
+                <p className="text-xs text-ink-500">
+                  {selected.spotlight?.enabled
+                    ? 'On the homepage right now.'
+                    : 'Not on the homepage.'}
+                </p>
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-ink-500">
+                The spotlight description, image and priority are edited under Content → Spotlight,
+                where everyone currently selected is listed.
               </p>
             </section>
 
