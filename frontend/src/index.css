@@ -1215,8 +1215,9 @@
     transform: scale(var(--intro-mid-scale));
     filter: blur(0);
   }
-  /* 42 - 64%: held, while act 2 plays out underneath it */
-  64% {
+  /* 42 - 72%: held, while act 2 plays out underneath it -- the letters
+     sliding out, the rule, the credit, the legal line */
+  72% {
     opacity: 1;
     transform: scale(var(--intro-mid-scale));
     filter: blur(0);
@@ -1232,21 +1233,24 @@
 }
 
 /* --- Act 2: the word comes out of its own centre -------------
-   Each letter is its own little element, and the delay is its
-   distance from the middle one, so the wordmark unbuilds outward
-   from the centre exactly the way a film pulls focus. */
+   Every letter starts stacked on the middle of the word and slides
+   horizontally out to its own place, sharpest at the centre and
+   last at the ends. Two numbers do it: --slide is how far to
+   travel, in ems of this type, and --d is the letter's distance
+   from the middle, which becomes its delay. Transform and blur
+   only, so the whole act is on the compositor. */
 .intro-letter {
   display: inline-block;
   will-change: transform, opacity, filter;
-  animation: intro-letter 420ms var(--ease-out-quint) both;
-  animation-delay: calc(720ms + var(--d, 0) * 52ms);
+  animation: intro-letter 400ms var(--ease-out-quint) both;
+  animation-delay: calc(700ms + var(--d, 0) * 44ms);
 }
 
 @keyframes intro-letter {
   0% {
     opacity: 0;
-    transform: translateY(0.1em) scale(0.92);
-    filter: blur(10px);
+    transform: translateX(calc(var(--slide, 0) * 1em)) scale(0.9);
+    filter: blur(12px);
   }
   100% {
     opacity: 1;
@@ -1256,21 +1260,26 @@
 }
 
 /* --- Act 2: the signature -------------------------------------
-   Below the medium wordmark: a hairline that draws out from the
-   centre, then the credit. It lives outside the zoomed word so the
-   credit keeps its real type size at every breakpoint, and it is
-   gone before the word starts travelling -- the credit introduces
-   itself, it does not tag along. */
+   Below the medium lockup: a hairline that draws out from the
+   centre, the credit, then a legal line small enough to read as a
+   footnote. All three sit outside the zoomed lockup so they keep
+   their real type size at every breakpoint, and all three are gone
+   before the word starts travelling.
+
+   `display: block` on each is load-bearing, not tidy-up: they are
+   spans, and the spec ignores a transform on a non-replaced inline
+   element. The rule was drawing nothing at all. */
 .intro-signoff {
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(50% + var(--intro-mid-h) / 2 + 22px);
+  top: calc(50% + var(--intro-mid-h) / 2 + 24px);
   text-align: center;
   pointer-events: none;
 }
 
 .intro-rule {
+  display: block;
   width: 148px;
   height: 1px;
   margin: 0 auto 12px;
@@ -1287,6 +1296,7 @@
 }
 
 .intro-credit {
+  display: block;
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.28em;
@@ -1295,17 +1305,28 @@
   animation: intro-credit var(--intro-stage-ms) var(--ease-out-quint) both;
 }
 
+.intro-legal {
+  display: block;
+  margin-top: 9px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.36em;
+  text-transform: uppercase;
+  color: var(--color-ink-300);
+  animation: intro-legal var(--intro-stage-ms) var(--ease-out-quint) both;
+}
+
 @keyframes intro-rule {
   0%,
-  50% {
+  46% {
     opacity: 0;
     transform: scaleX(0);
   }
-  62% {
+  56% {
     opacity: 1;
     transform: scaleX(1);
   }
-  78% {
+  74% {
     opacity: 1;
     transform: scaleX(1);
   }
@@ -1317,17 +1338,17 @@
 
 @keyframes intro-credit {
   0%,
-  56% {
+  48% {
     opacity: 0;
     transform: translateY(8px);
     filter: blur(6px);
   }
-  70% {
+  58% {
     opacity: 1;
     transform: none;
     filter: blur(0);
   }
-  80% {
+  74% {
     opacity: 1;
     transform: none;
     filter: blur(0);
@@ -1336,6 +1357,30 @@
     opacity: 0;
     transform: translateY(-6px);
     filter: blur(4px);
+  }
+}
+
+@keyframes intro-legal {
+  0%,
+  60% {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(5px);
+  }
+  70% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+  76% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+    filter: blur(3px);
   }
 }
 

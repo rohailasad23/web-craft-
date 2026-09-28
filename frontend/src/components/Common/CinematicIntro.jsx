@@ -51,11 +51,19 @@ export default function CinematicIntro({ onDone }) {
           {Array.from(WORDMARK).map((char, i) => (
             <span
               key={`${char}-${i}`}
-              // How far this letter sits from the middle one. CSS turns that
-              // number into the delay, so the wordmark resolves outward from
-              // its centre without a single line of timing logic here.
+              // Two numbers per letter, both plain arithmetic done once here:
+              //   --d      how far this letter sits from the middle one, which
+              //            becomes its delay, so the word assembles outward
+              //            from the centre
+              //   --slide  how far it must travel to REACH that centre, in ems
+              //            of the giant type. Every letter therefore starts
+              //            stacked in the middle and slides horizontally out
+              //            into its own place.
               className="intro-letter"
-              style={{ '--d': String(Math.abs(i - middle)) }}
+              style={{
+                '--d': String(Math.abs(i - middle)),
+                '--slide': ((middle - i) * 0.62).toFixed(2),
+              }}
             >
               {char === ' ' ? '\u00a0' : char}
             </span>
@@ -66,6 +74,7 @@ export default function CinematicIntro({ onDone }) {
       <p className="intro-signoff">
         <span className="intro-rule" />
         <span className="intro-credit">Developed by Rohail Asad</span>
+        <span className="intro-legal">@ all rights reserved</span>
       </p>
     </div>,
     // Straight onto <body>, deliberately. The page wrapper runs a fade/rise
