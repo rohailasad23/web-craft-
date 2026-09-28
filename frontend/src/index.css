@@ -1238,21 +1238,21 @@
     animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     opacity: 0;
     transform: scale(1.04);
-    filter: blur(14px);
+    filter: blur(9px);
   }
   12% {
     opacity: 1;
     transform: scale(1.04);
     filter: blur(0);
   }
-  /* 8 - 42%: the camera pulls back to a medium wordmark */
-  45% {
-    animation-timing-function: cubic-bezier(0.33, 0, 0.15, 1);
+  /* 12 - 45%: the camera pulls back to a medium lockup. A long, soft
+     deceleration -- this is the movement people actually watch. */
+  45% {    animation-timing-function: cubic-bezier(0.33, 0, 0.15, 1);
     opacity: 1;
     transform: scale(var(--intro-mid-scale));
     filter: blur(0);
   }
-  /* 42 - 72%: held, while act 2 plays out underneath it -- the letters
+  /* 45 - 78%: held, while act 2 plays out underneath it -- the letters
      sliding out, the rule, the credit, the legal line */
   78% {
     animation-timing-function: cubic-bezier(0.32, 0.72, 0.24, 1);
@@ -1260,11 +1260,28 @@
     transform: scale(var(--intro-mid-scale));
     filter: blur(0);
   }
-  /* 64 - 100%: on to the navbar, and gone. The nav brand's centre is
-   83px/21px, so that is where this one lands, at every width. */
+  /* 78 - 90%: the swoop. Quick, because it is a camera move and should feel
+     like one, but NOT fading out: the logo stays fully readable while it
+     crosses the screen, which is what makes it read as the brand travelling
+     to its place rather than melting on the way. */
+  90% {
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    opacity: 0.82;
+    filter: blur(2px);
+    transform: translate(calc((83px - 50vw) * 0.82), calc((21px - 50vh) * 0.82))
+      scale(
+        calc(
+          var(--intro-mid-scale) +
+            (var(--intro-end-scale) - var(--intro-mid-scale)) * 0.82
+        )
+      );
+  }
+  /* 90 - 100%: the last stretch, slower, and it only dissolves in the final
+     part of it. The nav brand's centre is 83px/21px, so that is where this
+     one lands, at every width. */
   100% {
     opacity: 0;
-    filter: blur(6px);
+    filter: blur(3px);
     transform: translate(calc(83px - 50vw), calc(21px - 50vh))
       scale(var(--intro-end-scale));
   }
@@ -1272,11 +1289,11 @@
 
 /* --- Act 2: the word comes out of its own centre -------------
    Every letter starts stacked on the middle of the word and slides
-   horizontally out to its own place, sharpest at the centre and
-   last at the ends. Two numbers do it: --slide is how far to
-   travel, in ems of this type, and --d is the letter's distance
-   from the middle, which becomes its delay. Transform and blur
-   only, so the whole act is on the compositor. */
+   horizontally out to its own place, sharpest at the centre and last
+   at the ends. Two numbers do it: --slide is the measured pixel
+   distance back to that centre, and --d is the letter's distance
+   from the middle, which becomes its delay. Transform and blur only,
+   so the whole act is on the compositor. */
 .intro-letter {
   display: inline-block;
   will-change: transform, opacity, filter;
@@ -1292,14 +1309,14 @@
 @keyframes intro-letter {
   0% {
     opacity: 0;
-    transform: translateX(calc(var(--slide, 0) * 1em)) scale(0.9);
-    filter: blur(12px);
+    transform: translateX(var(--slide, 0px)) scale(0.94);
+    filter: blur(10px);
   }
   /* 5% past its own target before it settles -- proportional to how far it
      travelled, so the far letters overshoot further than the near ones and
      the word looks like it lands rather than stops. */
   72% {
-    transform: translateX(calc(var(--slide, 0) * -0.05em)) scale(1.012);
+    transform: translateX(calc(var(--slide, 0px) * -0.05)) scale(1.012);
     filter: blur(0);
   }
   100% {
