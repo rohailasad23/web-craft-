@@ -1057,10 +1057,17 @@
 /* Three ratios the stage needs, all decided in CSS from the two sizes it
    is moving between, never measured in JavaScript. They describe the whole
    lockup (mark + name), not the name alone:
-     --intro-mid-scale   30vw mark + 16vw type -> a medium lockup
-     --intro-mid-h       how tall that lockup ends up, so the credit can sit
-                         a fixed distance below it
+     --intro-mid-scale   the 95vw lockup -> a medium one that is still whole
+     --intro-mid-h       how tall that medium lockup ends up, so the credit
+                         can sit a fixed distance below it
      --intro-end-scale   the same lockup -> the 32px mark + name in the nav
+
+   The mid is a share of the viewport, not a fixed pixel size, so it is the
+   same comfortable size on a phone and on a 27-inch display. The end is a
+   ratio too: the nav brand is 118px wide and 32px tall whatever the screen,
+   and the lockup is 95vw, so one number per band covers it. Below 400px the
+   navbar drops the name and shows the mark alone, so that band lands on the
+   mark instead.
 
    The stage clock itself is set on the element (see CinematicIntro), because
    it is a prop: 3.6s for a first visit, 2.2s for everyone after it. Every
@@ -1068,45 +1075,43 @@
    of it, so one choreography plays at two tempos. */
 :root {
   --intro-stage-ms: 3600ms;
-  --intro-mid-scale: 0.56;
-  --intro-mid-h: 54px;
-  /* Below 400px the navbar drops the name and shows the mark alone, so that
-     is the size the opening has to land on there. */
-  --intro-end-scale: 0.1;
+  --intro-mid-scale: 0.86;
+  --intro-mid-h: 63px;
+  --intro-end-scale: 0.38;
 }
 @media (min-width: 400px) {
   :root {
-    --intro-mid-scale: 0.48;
-    --intro-mid-h: 72px;
-    --intro-end-scale: 0.17;
+    --intro-mid-scale: 0.77;
+    --intro-mid-h: 71px;
+    --intro-end-scale: 0.26;
   }
 }
 @media (min-width: 640px) {
   :root {
-    --intro-mid-scale: 0.42;
-    --intro-mid-h: 101px;
-    --intro-end-scale: 0.12;
+    --intro-mid-scale: 0.61;
+    --intro-mid-h: 89px;
+    --intro-end-scale: 0.163;
   }
 }
 @media (min-width: 900px) {
   :root {
-    --intro-mid-scale: 0.32;
-    --intro-mid-h: 98px;
-    --intro-end-scale: 0.09;
+    --intro-mid-scale: 0.53;
+    --intro-mid-h: 108px;
+    --intro-end-scale: 0.127;
   }
 }
 @media (min-width: 1200px) {
   :root {
-    --intro-mid-scale: 0.24;
-    --intro-mid-h: 104px;
-    --intro-end-scale: 0.065;
+    --intro-mid-scale: 0.49;
+    --intro-mid-h: 135px;
+    --intro-end-scale: 0.091;
   }
 }
 @media (min-width: 1600px) {
   :root {
-    --intro-mid-scale: 0.2;
-    --intro-mid-h: 115px;
-    --intro-end-scale: 0.049;
+    --intro-mid-scale: 0.46;
+    --intro-mid-h: 169px;
+    --intro-end-scale: 0.068;
   }
 }
 
@@ -1180,9 +1185,15 @@
    One wrapper, one transform. The lockup is INLINE -- mark on the
    left, name on the right -- because that is the shape the navbar
    shows, so the closing flight lands on the real brand instead of
-   near it. At 1.2x it is wider than the screen on purpose: the
-   opening frame is the logo too close to fit, and the camera pulls
-   back until it does. */
+   near it.
+
+   The three parts are sized so the WHOLE lockup stays inside the screen
+   with room to spare: a 23vw mark, a 6vw gap, and 11.5vw type whose nine
+   glyphs measure about 5.34em, so 61vw. 90vw in all, and the opening frame
+   scales that by 1.04 -- 94vw, the logo filling the screen and still whole.
+   It used to be a 136vw lockup at 1.2x, which meant the first thing anyone
+   saw was a third of the brand with both ends sliced off, at every width,
+   phones included. */
 .intro-lockup {
   position: absolute;
   inset: 0;
@@ -1190,7 +1201,7 @@
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 9vw; /* the same mark:gap ratio the navbar uses, 10px on 32px */
+  gap: 6vw; /* the same mark:gap ratio the navbar uses, 10px on 32px */
   overflow: hidden; /* §27: oversized type can never widen the page */
   color: var(--color-ink-900);
   white-space: nowrap;
@@ -1198,15 +1209,15 @@
   animation: intro-camera var(--intro-stage-ms) cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* `flex: none` on both children matters more than it looks: the lockup is
-   wider than the screen by design, and a shrinkable flex item would quietly
-   squeeze the name instead of letting it run off the edge. This way the type
-   keeps its real width, the stage clips it symmetrically, and the closing
-   scale is a true "same logo, smaller" rather than a coincidence. */
+/* `flex: none` on both children matters more than it looks: it stops a
+   shrinkable flex item from quietly squeezing the name when the lockup
+   nears the edge of the screen, so the type keeps its real width and the
+   closing scale is a true "same logo, smaller" rather than a
+   coincidence. */
 .intro-mark {
   flex: none;
-  width: 30vw;
-  height: 30vw;
+  width: 23vw;
+  height: 23vw;
   filter: drop-shadow(0 18px 40px rgb(49 46 129 / 0.35));
 }
 
@@ -1215,7 +1226,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16vw;
+  font-size: 11.5vw;
   font-weight: 900;
   line-height: 1;
   letter-spacing: -0.045em;
@@ -1226,12 +1237,12 @@
   0% {
     animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
     opacity: 0;
-    transform: scale(1.2);
+    transform: scale(1.04);
     filter: blur(14px);
   }
   12% {
     opacity: 1;
-    transform: scale(1.2);
+    transform: scale(1.04);
     filter: blur(0);
   }
   /* 8 - 42%: the camera pulls back to a medium wordmark */
