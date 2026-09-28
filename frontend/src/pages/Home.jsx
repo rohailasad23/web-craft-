@@ -50,9 +50,11 @@ function magnetLeave(event) {
    1.8/2.0/2.2s, description 2.4s, search 2.6s, buttons 2.8s, and a fully
    interactive page by ~2.9s (§30).
 
-   That is 1.8s of stage plus the hero clock, once per session. No spinner,
-   no progress bar, no "loading" -- the real page renders underneath the whole
-   time and simply becomes visible as the veil lifts (§29).
+   That is 2.8s of stage plus the hero clock, on the first page of a session
+   (1.2s of stage plus a proportionally tighter clock on every page after
+   it). No spinner, no progress bar, no "loading" -- the real page renders
+   underneath the whole time and simply becomes visible as the veil lifts
+   (§29).
 
    THREE TEMPOS, ONE CLOCK. Every beat below is written on the canonical
    first-visit timeline and each visitor gets that same shape compressed:
@@ -208,7 +210,7 @@ export default function Home() {
      timeline nobody is reading any more (§16).
 
      The stage plays for EVERY visitor, not only the first of the session: a
-     returning visitor gets the same three acts at half the tempo (0.9s),
+     returning visitor gets the same three acts at a faster tempo (1.2s),
      which is the "small Web Craft reveal, then straight to the homepage" the
      spec describes -- and it is the difference between an opening that exists
      and one that exists once and is then never seen again. Only reduced
@@ -219,7 +221,7 @@ export default function Home() {
 
   const introSkipping = introSkipped && INTRO_MODE === 'cine';
   const introTempo = INTRO_TEMPO[introSkipping ? 'short' : INTRO_MODE];
-  const introMs = introSkipping || INTRO_MODE === 'short' ? 900 : 1800;
+  const introMs = introSkipping || INTRO_MODE === 'short' ? 1200 : 2800;
   /** ms into the canonical timeline -> an animation delay for one element. */
   const at = (ms) => ({ animationDelay: `${Math.round(ms * introTempo)}ms` });
   /** The same clock for a `.stagger` row (its children add their own 50ms). */
@@ -357,7 +359,7 @@ export default function Home() {
         <div
           aria-hidden
           className="hero-backdrop pointer-events-none absolute inset-0 animate-fade-in"
-          style={at(1000)}
+          style={at(1600)}
         >
           <div className="absolute -left-40 -top-40 h-[28rem] w-[28rem] rounded-full bg-brand-200/45 blur-3xl animate-float" />
           <div className="absolute -right-32 top-24 h-96 w-96 rounded-full bg-purple-200/40 blur-3xl animate-float [animation-delay:-3s]" />
@@ -380,7 +382,7 @@ export default function Home() {
         <div className="relative mx-auto max-w-4xl px-5 pb-4 pt-14 text-center sm:px-6 sm:pt-20">
           <span
             className="ui-eyebrow line-rise"
-            style={{ ...at(1600), '--rise-y': '15px', '--rise-blur': '6px' }}
+            style={{ ...at(2300), '--rise-y': '15px', '--rise-blur': '6px' }}
           >
             Free template marketplace
           </span>
@@ -391,19 +393,19 @@ export default function Home() {
               on the word it is about. */}
           <h1 className="mt-5 text-4xl font-extrabold leading-[1.04] tracking-tight text-ink-900 sm:text-6xl">
             <span className="hero-line">
-              <span className="line-rise" style={at(1800)}>
+              <span className="line-rise" style={at(2500)}>
                 Discover.
               </span>
             </span>
             <span className="hero-line">
-              <span className="line-rise" style={{ ...at(2000), '--rise-blur': '7px' }}>
+              <span className="line-rise" style={{ ...at(2680), '--rise-blur': '7px' }}>
                 Download.
               </span>
             </span>
             <span className="hero-line">
               <span
                 className="line-rise bg-gradient-to-r from-brand-600 via-brand-500 to-purple-500 bg-clip-text text-transparent"
-                style={{ ...at(2200), '--rise-blur': '5px' }}
+                style={{ ...at(2860), '--rise-blur': '5px' }}
               >
                 Build.
               </span>
@@ -412,7 +414,7 @@ export default function Home() {
 
           <p
             className="mx-auto mt-5 max-w-2xl line-rise text-base leading-relaxed text-ink-500 sm:text-lg"
-            style={{ ...at(2400), '--rise-blur': '6px' }}
+            style={{ ...at(3040), '--rise-blur': '6px' }}
           >
             <strong className="font-semibold text-ink-700">web craft is a free marketplace for
             ready-made website templates.</strong> Browse by category or technology, open the live
@@ -423,12 +425,12 @@ export default function Home() {
           {/* §13: the field arrives slightly smaller and settles -- the
               width itself never animates, which is the point. */}
           <HeroSearch
-            delay={{ ...at(2600), '--rise-y': '18px', '--rise-scale': '0.94', '--rise-blur': '6px' }}
+            delay={{ ...at(3220), '--rise-y': '18px', '--rise-scale': '0.94', '--rise-blur': '6px' }}
           />
 
           <div
             className="mt-8 line-rise flex flex-col items-center justify-center gap-3 sm:flex-row"
-            style={{ ...at(2800), '--rise-blur': '4px' }}
+            style={{ ...at(3400), '--rise-blur': '4px' }}
           >
             <span
               className="ui-magnetic"
@@ -457,7 +459,7 @@ export default function Home() {
           {ready && categories?.length > 0 && (
             <div
               className="stagger mt-9 flex flex-wrap justify-center gap-2"
-              style={stag(3000)}
+              style={stag(3560)}
             >
               {categories.slice(0, 5).map((c) => (
                 <button
@@ -475,7 +477,7 @@ export default function Home() {
 
         {/* §5/§21: the preview cluster. It is already in place when the
             word leaves -- the world is here before the sentence starts. */}
-        <HeroVisual items={heroItems} loading={loading} style={at(1250)} />
+        <HeroVisual items={heroItems} loading={loading} style={at(1850)} />
       </section>
 
       <main className="mx-auto max-w-7xl px-5 sm:px-6">
