@@ -1242,8 +1242,13 @@
 .intro-letter {
   display: inline-block;
   will-change: transform, opacity, filter;
-  animation: intro-letter 400ms var(--ease-out-quint) both;
-  animation-delay: calc(700ms + var(--d, 0) * 44ms);
+  /* Every timing here is a FRACTION of the stage, not a fixed millisecond
+     count, so the whole act compresses cleanly when a returning visitor gets
+     the short version of the opening. */
+  animation: intro-letter calc(var(--intro-stage-ms) * 0.222) var(--ease-out-quint) both;
+  animation-delay: calc(
+    var(--intro-stage-ms) * 0.389 + var(--d, 0) * var(--intro-stage-ms) * 0.0244
+  );
 }
 
 @keyframes intro-letter {
@@ -1464,14 +1469,42 @@
     scroll-behavior: auto !important;
   }
 
-  /* §16/§28: the opening is the one thing reduced motion removes
-     outright. The hero beats above already collapse to a plain fade
-     through the blanket rule -- there is no camera move to keep. */
-  .intro-stage {
-    display: none;
+  /* §16/§28: the cinematic MOVEMENT is what reduced motion removes, not the
+     introduction itself. The stage still appears -- the logo, the name, the
+     credit, the legal line -- it simply cross-fades in place: no zoom, no
+     slide, no blur, nothing that moves. One opacity ramp for every layer, so
+     the three acts collapse into a single quiet fade and the page is still
+     introduced rather than simply appearing.
+
+     `!important` because the blanket rule above forces every duration to
+     0.001ms; these are the eight elements that get to keep a real one, and
+     they are the only motion in the product that does. */
+  .intro-veil,
+  .intro-lockup,
+  .intro-letter,
+  .intro-rule,
+  .intro-credit,
+  .intro-legal,
+  .intro-grid,
+  .intro-glow {
+    animation: intro-calm var(--intro-stage-ms) linear both !important;
   }
 
   /* Everything above snaps to its end state instantly. Reveals use
      `backwards` fill, so once they are over the element falls back to its
      own styles -- content is never left stuck at opacity 0. */
+}
+
+@keyframes intro-calm {
+  0%,
+  14% {
+    opacity: 0;
+  }
+  24%,
+  74% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }

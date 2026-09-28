@@ -29,16 +29,24 @@ import { BrandMark } from './BrandLogo';
 const WORDMARK = 'WEB CRAFT';
 const STAGE_MS = 1800;
 
-export default function CinematicIntro({ onDone }) {
+export default function CinematicIntro({ onDone, duration = STAGE_MS }) {
   useEffect(() => {
-    const timer = window.setTimeout(onDone, STAGE_MS);
+    const timer = window.setTimeout(onDone, duration);
     return () => window.clearTimeout(timer);
-  }, [onDone]);
+  }, [onDone, duration]);
 
   const middle = (WORDMARK.length - 1) / 2;
 
   return createPortal(
-    <div className="intro-stage" aria-hidden="true">
+    <div
+      className="intro-stage"
+      // The whole act is timed off this one value: every keyframe in the CSS
+      // is a percentage of the stage, and the per-letter delays are fractions
+      // of it, so 1800ms for a first visit and 900ms for everyone after it
+      // are the same choreography played at two tempos.
+      style={{ '--intro-stage-ms': `${duration}ms` }}
+      aria-hidden="true"
+    >
       <div className="intro-veil" />
       <div className="intro-grid" />
       <div className="intro-glow" />

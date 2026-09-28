@@ -205,12 +205,21 @@ export default function Home() {
      is mounted; `skipped` is what a visitor who did not want to watch it
      sets, and it pulls the hero forward to the short tempo so the page
      finishes arriving immediately instead of waiting out the rest of a
-     timeline nobody is reading any more (§16). */
-  const [introPlaying, setIntroPlaying] = useState(INTRO_MODE === 'cine');
+     timeline nobody is reading any more (§16).
+
+     The stage plays for EVERY visitor, not only the first of the session: a
+     returning visitor gets the same three acts at half the tempo (0.9s),
+     which is the "small Web Craft reveal, then straight to the homepage" the
+     spec describes -- and it is the difference between an opening that exists
+     and one that exists once and is then never seen again. Only reduced
+     motion opts out (§16, §28). */
+  const [introPlaying, setIntroPlaying] = useState(INTRO_MODE !== 'calm');
   const [introSkipped, setIntroSkipped] = useState(false);
   const endIntro = useCallback(() => setIntroPlaying(false), []);
 
-  const introTempo = INTRO_TEMPO[introSkipped && INTRO_MODE === 'cine' ? 'short' : INTRO_MODE];
+  const introSkipping = introSkipped && INTRO_MODE === 'cine';
+  const introTempo = INTRO_TEMPO[introSkipping ? 'short' : INTRO_MODE];
+  const introMs = introSkipping || INTRO_MODE === 'short' ? 900 : 1800;
   /** ms into the canonical timeline -> an animation delay for one element. */
   const at = (ms) => ({ animationDelay: `${Math.round(ms * introTempo)}ms` });
   /** The same clock for a `.stagger` row (its children add their own 50ms). */
@@ -328,10 +337,11 @@ export default function Home() {
 
   return (
     <div>
-      {/* §1-§9: the opening. Mounted only for a first visit, on top of a
-          page that is already rendered and already clickable, and taken
-          away the moment its 1.45s are up. */}
-      {introPlaying && <CinematicIntro onDone={endIntro} />}
+      {/* §1-§9: the opening. Mounted for every visitor -- full tempo for the
+          first page of a session, half for the rest -- on top of a page that
+          is already rendered and already clickable, and taken away the
+          moment its time is up. */}
+      {introPlaying && <CinematicIntro onDone={endIntro} duration={introMs} />}
 
       {/* ---------------------------------------------------------- hero */}
       <section
