@@ -1070,11 +1070,11 @@
    mark instead.
 
    The stage clock itself is set on the element (see CinematicIntro), because
-   it is a prop: 3.6s for a first visit, 2.2s for everyone after it. Every
+   it is a prop: 4.5s for a first visit, 2.8s for everyone after it. Every
    keyframe below is a percentage of it and every per-letter delay a fraction
    of it, so one choreography plays at two tempos. */
 :root {
-  --intro-stage-ms: 3600ms;
+  --intro-stage-ms: 4500ms;
   --intro-mid-scale: 0.86;
   --intro-mid-h: 63px;
   --intro-end-scale: 0.38;

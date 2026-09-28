@@ -27,7 +27,7 @@ import { BrandMark } from './BrandLogo';
  * from the parent.
  */
 const WORDMARK = 'WEB CRAFT';
-const STAGE_MS = 3600;
+const STAGE_MS = 4500;
 
 export default function CinematicIntro({ onDone, duration = STAGE_MS }) {
   useEffect(() => {
