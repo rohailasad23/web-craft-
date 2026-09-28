@@ -8,11 +8,17 @@
  * same shape on every device, crisp at 20px, and it takes the brand gradient
  * instead of fighting it.
  *
- * Composition, outside in: an indigo-to-indigo tile with a light gloss across
- * the top, one white piece floating on it (the "template" -- the thing you
- * find and take away), and a four-point spark in the corner (the craft). The
- * spark is the only part that gets dropped below 28px, where it would turn
- * into a smudge.
+ * Composition, outside in: an indigo disc with a light gloss across the top,
+ * one white piece floating on it (the "template" -- the thing you find and
+ * take away), and a four-point spark in the corner (the craft). The spark is
+ * the only part that gets dropped below 28px, where it would turn into a
+ * smudge.
+ *
+ * Round, not a rounded square, and that is not a taste call: a browser tab
+ * shows the favicon inside a circle, so a circular mark fills the space it is
+ * given while a square gets its corners shaved off. Everything is clipped to
+ * one circle so the gloss stays a horizontal band across the top instead of
+ * being a second shape with corners of its own.
  *
  * One component so the navbar, the footer and the favicon can never drift
  * apart: the same geometry, the same gradient, the same wordmark.
@@ -22,7 +28,9 @@ import { useId } from 'react';
 const PIECE =
   'M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.42 0 2.5 1.09 2.5 2.5s-1.08 2.5-2.5 2.5H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.41 1.09-2.5 2.5-2.5s2.5 1.09 2.5 2.5V22h3.5c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z';
 
-const SPARK = 'M30 4.6 31.35 8.05 34.8 9.4 31.35 10.75 30 14.2 28.65 10.75 25.2 9.4 28.65 8.05Z';
+/* Pulled in off the rim: on a square there was room to sit in the corner, on
+   a disc the same coordinates would clip. */
+const SPARK = 'M28.5 5.9 29.85 9.35 33.3 10.7 29.85 12.05 28.5 15.5 27.15 12.05 23.7 10.7 27.15 9.35Z';
 
 /**
  * The mark alone. Always decorative: it only ever appears beside the
@@ -56,32 +64,33 @@ export function BrandMark({ size = 32, sparkle = true, className = '' }) {
           <stop offset="0" stopColor="#ffffff" stopOpacity="0.34" />
           <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
         </linearGradient>
+        <clipPath id={`${id}-disc`}>
+          <circle cx="20" cy="20" r="20" />
+        </clipPath>
       </defs>
 
-      {/* the tile */}
-      <rect width="40" height="40" rx="12" fill={`url(#${id}-tile)`} />
-      {/* light from above -- the difference between "app icon" and "square" */}
-      <rect width="40" height="21" rx="12" fill={`url(#${id}-gloss)`} />
-      {/* the piece, with a matching stroke to round its corners */}
-      <g transform="translate(7.1 10.4) scale(0.85)">
-        <path d={PIECE} fill="#fff" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" />
+      <g clipPath={`url(#${id}-disc)`}>
+        {/* the disc */}
+        <rect width="40" height="40" fill={`url(#${id}-tile)`} />
+        {/* light from above -- the difference between "app icon" and "blob" */}
+        <rect width="40" height="21" fill={`url(#${id}-gloss)`} />
+        {/* the piece, with a matching stroke to round its corners */}
+        <g transform="translate(7.1 10.4) scale(0.85)">
+          <path d={PIECE} fill="#fff" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" />
+        </g>
+        {sparkle && (
+          <path d={SPARK} fill="#fff" opacity="0.95" stroke="#fff" strokeWidth="0.7" strokeLinejoin="round" />
+        )}
       </g>
-      {sparkle && (
-        <path d={SPARK} fill="#fff" opacity="0.95" stroke="#fff" strokeWidth="0.7" strokeLinejoin="round" />
-      )}
     </svg>
   );
 }
 
 /**
- * Mark + wordmark. The wordmark is set in the site's own sans at the weight
- * the opening uses for its giant WEB CRAFT, so the logo that the cinematic
- * intro hands over to is the same logo the visitor has been looking at.
- */
-/**
  * The wordmark on its own, so a layout that needs the mark and the name in
  * different places (the navbar drops the name on the narrowest phones) still
- * sets them identically.
+ * sets them identically. Same face and weight as the opening's giant
+ * WEB CRAFT, so the logo the intro hands over to is the one already on screen.
  */
 export function BrandWord({ className = '' }) {
   return (

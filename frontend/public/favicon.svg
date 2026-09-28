@@ -10,21 +10,30 @@
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.34" />
       <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
     </linearGradient>
+    <clipPath id="wc-disc">
+      <circle cx="20" cy="20" r="20" />
+    </clipPath>
   </defs>
-  <rect width="40" height="40" rx="12" fill="url(#wc-tile)" />
-  <rect width="40" height="21" rx="12" fill="url(#wc-gloss)" />
+
   <!--
-    The same mark as components/Common/BrandLogo.jsx, without the corner
-    spark: at 16-32px in a tab bar a four-point star is a smudge. Keep the
-    two in step when the geometry changes.
+    The same mark as components/Common/BrandLogo.jsx: a disc, not a rounded
+    square, because a browser tab draws the favicon inside a circle anyway.
+    No corner spark here, because at 16-32px in a tab bar a four-point star
+    is a smudge. Keep the two in step when the geometry changes.
+    (Careful in here: XML forbids a double hyphen inside a comment, and one
+    stray pair turns the whole file into a parse error.)
   -->
-  <g transform="translate(7.1 10.4) scale(0.85)">
-    <path
-      d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.42 0 2.5 1.09 2.5 2.5s-1.08 2.5-2.5 2.5H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.41 1.09-2.5 2.5-2.5s2.5 1.09 2.5 2.5V22h3.5c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-      fill="#fff"
-      stroke="#fff"
-      stroke-width="1.5"
-      stroke-linejoin="round"
-    />
+  <g clip-path="url(#wc-disc)">
+    <rect width="40" height="40" fill="url(#wc-tile)" />
+    <rect width="40" height="21" fill="url(#wc-gloss)" />
+    <g transform="translate(7.1 10.4) scale(0.85)">
+      <path
+        d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.42 0 2.5 1.09 2.5 2.5s-1.08 2.5-2.5 2.5H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.41 1.09-2.5 2.5-2.5s2.5 1.09 2.5 2.5V22h3.5c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
+        fill="#fff"
+        stroke="#fff"
+        stroke-width="1.5"
+        stroke-linejoin="round"
+      />
+    </g>
   </g>
 </svg>
