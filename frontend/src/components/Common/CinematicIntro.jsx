@@ -2,34 +2,65 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * The opening (spec §1-§9, §19, §30).
+ * The opening.
  *
- * One fixed layer, 1.45 seconds, four keyframes -- all of it in CSS. React's
- * only job is to take the layer away when the animation is over, because
- * leaving it mounted would keep a full-screen layer (and its blur) in the
- * compositor for the life of the page.
+ * Three acts, 1.8 seconds, and every one of them is a keyframe: React's only
+ * job is to take the layer away when it is over, because leaving it mounted
+ * would keep a full-screen layer (and its blur) in the compositor for the
+ * life of the page.
  *
- * What it is not: a loading screen. There is no spinner, no bar, no
- * "loading" text, and nothing here waits for data. The word arrives on the
- * first frame; the real page has been rendering underneath the whole time and
- * simply becomes visible as the veil lifts (§15, §29).
+ *   1  the logo arrives oversized, and the camera pulls back until the
+ *      wordmark is a medium size
+ *   2  at that size the word comes out of its own centre -- one letter at a
+ *      time, radiating outwards -- and a hairline draws under it, followed
+ *      by the credit
+ *   3  the credit lets go, the word travels the exact distance to the navbar
+ *      wordmark, and the veil lifts onto the real interface
  *
- * Nothing is interactive by design: `pointer-events: none` is set in CSS, so
- * the page underneath keeps every click even while this is on screen. A wheel,
- * a swipe or a key press ends it early from the parent (§16).
+ * What it is not: a loading screen. No spinner, no bar, no "loading" text,
+ * and nothing here waits for data -- the page underneath is fully rendered
+ * and fully clickable from the first frame.
+ *
+ * `pointer-events: none` is set in CSS, so the page keeps every click even
+ * while this is on screen; a wheel, a swipe or a key press ends it early
+ * from the parent.
  */
+const WORDMARK = 'WEB CRAFT';
+const STAGE_MS = 1800;
+
 export default function CinematicIntro({ onDone }) {
   useEffect(() => {
-    const timer = window.setTimeout(onDone, 1450);
+    const timer = window.setTimeout(onDone, STAGE_MS);
     return () => window.clearTimeout(timer);
   }, [onDone]);
+
+  const middle = (WORDMARK.length - 1) / 2;
 
   return createPortal(
     <div className="intro-stage" aria-hidden="true">
       <div className="intro-veil" />
       <div className="intro-grid" />
       <div className="intro-glow" />
-      <div className="intro-word">WEB CRAFT</div>
+
+      <div className="intro-word">
+        {Array.from(WORDMARK).map((char, i) => (
+          <span
+            key={`${char}-${i}`}
+            // How far this letter sits from the middle one. CSS turns that
+            // number into the delay, so the wordmark resolves outward from
+            // its centre without a single line of timing logic here.
+            className="intro-letter"
+            style={{ '--d': String(Math.abs(i - middle)) }}
+          >
+            {char === ' ' ? '\u00a0' : char}
+          </span>
+        ))}
+      </div>
+
+      <p className="intro-signoff">
+        <span className="intro-rule" />
+        <span className="intro-credit">Developed by Rohail Asad</span>
+      </p>
     </div>,
     // Straight onto <body>, deliberately. The page wrapper runs a fade/rise
     // transition, and an ancestor with a transform becomes the containing

@@ -43,13 +43,14 @@ function magnetLeave(event) {
 
 /* ------------------------------------------------ the opening (§1-§9)
    The homepage introduces itself instead of simply appearing. WEB CRAFT
-   arrives oversized and centred, the camera pulls back, the environment
-   grows around the word, and the word lands on the navbar brand -- at which
-   point the hero's own beats take over and finish the sentence:
-   eyebrow 1.5s, headline 1.7/1.9/2.1s, description 2.3s, search 2.5s,
-   buttons 2.7s, fully interactive by 2.9s (§30).
+   arrives as a wall of type, the camera pulls back to a medium wordmark,
+   the word then resolves letter by letter out of its own centre, the credit
+   draws in beneath it, and finally the word travels to the navbar brand --
+   handing over to the hero's own beats at 1.6s: eyebrow 1.6s, headline
+   1.8/2.0/2.2s, description 2.4s, search 2.6s, buttons 2.8s, and a fully
+   interactive page by ~2.9s (§30).
 
-   That is ~1.45s of stage plus the hero clock, once per session. No spinner,
+   That is 1.8s of stage plus the hero clock, once per session. No spinner,
    no progress bar, no "loading" -- the real page renders underneath the whole
    time and simply becomes visible as the veil lifts (§29).
 
@@ -346,7 +347,7 @@ export default function Home() {
         <div
           aria-hidden
           className="hero-backdrop pointer-events-none absolute inset-0 animate-fade-in"
-          style={at(900)}
+          style={at(1000)}
         >
           <div className="absolute -left-40 -top-40 h-[28rem] w-[28rem] rounded-full bg-brand-200/45 blur-3xl animate-float" />
           <div className="absolute -right-32 top-24 h-96 w-96 rounded-full bg-purple-200/40 blur-3xl animate-float [animation-delay:-3s]" />
@@ -369,7 +370,7 @@ export default function Home() {
         <div className="relative mx-auto max-w-4xl px-5 pb-4 pt-14 text-center sm:px-6 sm:pt-20">
           <span
             className="ui-eyebrow line-rise"
-            style={{ ...at(1500), '--rise-y': '15px', '--rise-blur': '6px' }}
+            style={{ ...at(1600), '--rise-y': '15px', '--rise-blur': '6px' }}
           >
             Free template marketplace
           </span>
@@ -380,19 +381,19 @@ export default function Home() {
               on the word it is about. */}
           <h1 className="mt-5 text-4xl font-extrabold leading-[1.04] tracking-tight text-ink-900 sm:text-6xl">
             <span className="hero-line">
-              <span className="line-rise" style={at(1700)}>
+              <span className="line-rise" style={at(1800)}>
                 Discover.
               </span>
             </span>
             <span className="hero-line">
-              <span className="line-rise" style={{ ...at(1900), '--rise-blur': '7px' }}>
+              <span className="line-rise" style={{ ...at(2000), '--rise-blur': '7px' }}>
                 Download.
               </span>
             </span>
             <span className="hero-line">
               <span
                 className="line-rise bg-gradient-to-r from-brand-600 via-brand-500 to-purple-500 bg-clip-text text-transparent"
-                style={{ ...at(2100), '--rise-blur': '5px' }}
+                style={{ ...at(2200), '--rise-blur': '5px' }}
               >
                 Build.
               </span>
@@ -401,7 +402,7 @@ export default function Home() {
 
           <p
             className="mx-auto mt-5 max-w-2xl line-rise text-base leading-relaxed text-ink-500 sm:text-lg"
-            style={{ ...at(2300), '--rise-blur': '6px' }}
+            style={{ ...at(2400), '--rise-blur': '6px' }}
           >
             <strong className="font-semibold text-ink-700">web craft is a free marketplace for
             ready-made website templates.</strong> Browse by category or technology, open the live
@@ -412,12 +413,12 @@ export default function Home() {
           {/* §13: the field arrives slightly smaller and settles -- the
               width itself never animates, which is the point. */}
           <HeroSearch
-            delay={{ ...at(2500), '--rise-y': '18px', '--rise-scale': '0.94', '--rise-blur': '6px' }}
+            delay={{ ...at(2600), '--rise-y': '18px', '--rise-scale': '0.94', '--rise-blur': '6px' }}
           />
 
           <div
             className="mt-8 line-rise flex flex-col items-center justify-center gap-3 sm:flex-row"
-            style={{ ...at(2700), '--rise-blur': '4px' }}
+            style={{ ...at(2800), '--rise-blur': '4px' }}
           >
             <span
               className="ui-magnetic"
@@ -446,7 +447,7 @@ export default function Home() {
           {ready && categories?.length > 0 && (
             <div
               className="stagger mt-9 flex flex-wrap justify-center gap-2"
-              style={stag(2900)}
+              style={stag(3000)}
             >
               {categories.slice(0, 5).map((c) => (
                 <button
@@ -464,7 +465,7 @@ export default function Home() {
 
         {/* §5/§21: the preview cluster. It is already in place when the
             word leaves -- the world is here before the sentence starts. */}
-        <HeroVisual items={heroItems} loading={loading} style={at(1150)} />
+        <HeroVisual items={heroItems} loading={loading} style={at(1250)} />
       </section>
 
       <main className="mx-auto max-w-7xl px-5 sm:px-6">

@@ -1031,51 +1031,74 @@
 .ui-press:active { scale: 0.96; }
 
 /* ============================================================
-   THE OPENING -- the homepage introduces itself (spec §1-§9,
-   §19, §24-§30).
+   THE OPENING -- the homepage introduces itself.
 
-   One fixed layer, four keyframes, 1.45 seconds: the word
-   arrives oversized, the camera pulls back, the environment
-   grows around it, and the word lands on the navbar brand
-   and is gone. The hero's own beats take over from 1.5s
-   (§30) and the page is fully interactive by 2.9s.
+   Three acts, 1.8 seconds, on one fixed layer over a page that is
+   already rendered and already clickable:
 
-   It is a stage, not a gate: `pointer-events: none` so not
-   one click is ever stolen, and any wheel, swipe or key
-   press ends it early (§16). Transform, opacity and a
-   deliberate 10px of blur are the only things that move --
-   no width, no height, no layout work (§26).
+     1  the logo arrives oversized and the camera pulls back until
+        it is a medium wordmark
+     2  at that size the word resolves -- letter by letter outward
+        from its own centre -- and the credit line draws in below
+     3  the credit lets go, the word travels the exact distance to
+        the navbar wordmark and dissolves, and the veil lifts onto
+        the real interface
+
+   Act 3 hands over to the hero's own beats at 1.6s, so the page is
+   fully interactive by ~2.9s (§30).
+
+   It is a stage, not a gate: `pointer-events: none` so not one
+   click is ever stolen, and any wheel, swipe or key press ends it
+   early (§16). Transform, opacity and a capped 14px of blur are
+   the only things that move -- no width, no height, no layout
+   work (§26).
    ============================================================ */
 
-/* How far the opening type has to shrink to become the navbar
-   wordmark. The stage sets it in vw and the navbar sets it in
-   px, so the ratio is one number per breakpoint -- settled in
-   CSS, never measured in JavaScript. */
+/* Two ratios the stage needs, both decided in CSS from the two
+   sizes it is moving between, never measured in JavaScript:
+
+   --intro-mid-scale   16vw of type -> a medium wordmark
+   --intro-mid-h       how tall that wordmark ends up, so the
+                       credit can sit a fixed distance below it
+   --intro-end-scale   16vw of type -> the navbar's 16px wordmark */
 :root {
+  --intro-stage-ms: 1800ms;
+  --intro-mid-scale: 0.66;
+  --intro-mid-h: 34px;
   --intro-end-scale: 0.3;
 }
 @media (min-width: 420px) {
   :root {
+    --intro-mid-scale: 0.58;
+    --intro-mid-h: 46px;
     --intro-end-scale: 0.24;
   }
 }
 @media (min-width: 640px) {
   :root {
+    --intro-mid-scale: 0.5;
+    --intro-mid-h: 62px;
     --intro-end-scale: 0.15;
   }
 }
 @media (min-width: 900px) {
   :root {
+    --intro-mid-scale: 0.4;
+    --intro-mid-h: 68px;
     --intro-end-scale: 0.1;
   }
 }
 @media (min-width: 1200px) {
   :root {
+    --intro-mid-scale: 0.31;
+    --intro-mid-h: 74px;
     --intro-end-scale: 0.075;
   }
 }
 @media (min-width: 1600px) {
   :root {
+    --intro-mid-scale: 0.25;
+    --intro-mid-h: 80px;
     --intro-end-scale: 0.055;
   }
 }
@@ -1094,10 +1117,12 @@
   inset: 0;
 }
 
-/* The clean viewport: white, and the last thing to let go. */
+/* Act 3's clock: the site starts showing at 1.33s, while the word
+   is still on its way to the navbar, so the interface is revealed
+   BY the logo rather than after it. */
 .intro-veil {
   background: var(--color-white);
-  animation: intro-veil 1450ms var(--ease-out-quint) both;
+  animation: intro-veil var(--intro-stage-ms) var(--ease-out-quint) both;
 }
 
 /* The world arriving behind the type -- a quiet grid, warmed by one glow. */
@@ -1107,7 +1132,7 @@
     linear-gradient(to bottom, rgb(99 102 241 / 0.14) 1px, transparent 1px);
   background-size: 44px 44px;
   mask-image: radial-gradient(ellipse at 50% 42%, #000, transparent 70%);
-  animation: intro-grow 1450ms var(--ease-out-quint) both;
+  animation: intro-grow var(--intro-stage-ms) var(--ease-out-quint) both;
 }
 
 .intro-glow {
@@ -1123,9 +1148,12 @@
     rgb(147 51 234 / 0.1) 46%,
     transparent 70%
   );
-  animation: intro-grow 1450ms var(--ease-out-quint) 100ms both;
+  animation: intro-grow var(--intro-stage-ms) var(--ease-out-quint) 120ms both;
 }
 
+/* --- Act 1 + 3: the camera ------------------------------------
+   The whole zoom lives on one element, so the word keeps a single
+   transform no matter how many letters it is made of. */
 .intro-word {
   position: absolute;
   inset: 0;
@@ -1140,39 +1168,152 @@
   color: var(--color-ink-900);
   white-space: nowrap;
   will-change: transform, opacity, filter;
-  animation: intro-word 1450ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: intro-camera var(--intro-stage-ms) cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes intro-word {
+@keyframes intro-camera {
+  /* 0 - 8%: the logo is born, close enough to read as a wall of type */
   0% {
     opacity: 0;
-    transform: scale(1.12);
-    filter: blur(10px);
+    transform: scale(1.2);
+    filter: blur(14px);
   }
-  22% {
+  8% {
     opacity: 1;
-    transform: scale(1);
     filter: blur(0);
   }
-  40% {
+  /* 8 - 42%: the camera pulls back to a medium wordmark */
+  42% {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(var(--intro-mid-scale));
     filter: blur(0);
   }
+  /* 42 - 64%: held, while act 2 plays out underneath it */
+  64% {
+    opacity: 1;
+    transform: scale(var(--intro-mid-scale));
+    filter: blur(0);
+  }
+  /* 64 - 100%: on to the navbar, and gone */
   100% {
     opacity: 0;
     filter: blur(6px);
-    /* §19: the word's centre sits at 50vw/50vh, the navbar brand at
-       72px/36px -- so this translate is the exact journey between them,
-       at any width, and the scale does the shrinking. */
     transform: translate(calc(72px - 50vw), calc(36px - 50vh))
       scale(var(--intro-end-scale));
   }
 }
 
+/* --- Act 2: the word comes out of its own centre -------------
+   Each letter is its own little element, and the delay is its
+   distance from the middle one, so the wordmark unbuilds outward
+   from the centre exactly the way a film pulls focus. */
+.intro-letter {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+  animation: intro-letter 420ms var(--ease-out-quint) both;
+  animation-delay: calc(720ms + var(--d, 0) * 52ms);
+}
+
+@keyframes intro-letter {
+  0% {
+    opacity: 0;
+    transform: translateY(0.1em) scale(0.92);
+    filter: blur(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+/* --- Act 2: the signature -------------------------------------
+   Below the medium wordmark: a hairline that draws out from the
+   centre, then the credit. It lives outside the zoomed word so the
+   credit keeps its real type size at every breakpoint, and it is
+   gone before the word starts travelling -- the credit introduces
+   itself, it does not tag along. */
+.intro-signoff {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + var(--intro-mid-h) / 2 + 22px);
+  text-align: center;
+  pointer-events: none;
+}
+
+.intro-rule {
+  width: 148px;
+  height: 1px;
+  margin: 0 auto 12px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--color-brand-400) 45%,
+    var(--color-purple-400) 55%,
+    transparent
+  );
+  transform-origin: center;
+  animation: intro-rule var(--intro-stage-ms) var(--ease-out-quint) both;
+}
+
+.intro-credit {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-ink-400);
+  animation: intro-credit var(--intro-stage-ms) var(--ease-out-quint) both;
+}
+
+@keyframes intro-rule {
+  0%,
+  50% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  62% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  78% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes intro-credit {
+  0%,
+  56% {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(6px);
+  }
+  70% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+  80% {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+    filter: blur(4px);
+  }
+}
+
 @keyframes intro-veil {
   0%,
-  58% {
+  74% {
     opacity: 1;
   }
   100% {
@@ -1184,11 +1325,14 @@
   0% {
     opacity: 0;
   }
-  45% {
+  26% {
+    opacity: 1;
+  }
+  74% {
     opacity: 1;
   }
   100% {
-    opacity: 0.9;
+    opacity: 0.6;
   }
 }
 
