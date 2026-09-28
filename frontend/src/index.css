@@ -1063,11 +1063,11 @@
      --intro-end-scale   the same lockup -> the 32px mark + name in the nav
 
    The stage clock itself is set on the element (see CinematicIntro), because
-   it is a prop: 2.8s for a first visit, 1.2s for everyone after it. Every
+   it is a prop: 3.6s for a first visit, 2.2s for everyone after it. Every
    keyframe below is a percentage of it and every per-letter delay a fraction
    of it, so one choreography plays at two tempos. */
 :root {
-  --intro-stage-ms: 2800ms;
+  --intro-stage-ms: 3600ms;
   --intro-mid-scale: 0.56;
   --intro-mid-h: 54px;
   /* Below 400px the navbar drops the name and shows the mark alone, so that
