@@ -49,6 +49,15 @@
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
+  /* Motion scale (interactive layer §37) -- four durations, one curve.
+     Every effect added by the experience pass picks its step from these
+     instead of inventing a number, which is what keeps the site reading as
+     one animation language rather than six. */
+  --dur-fast: 160ms;   /* level 3: icons, toggles, press feedback */
+  --dur-base: 260ms;   /* level 3: buttons, overlays, focus affordances */
+  --dur-reveal: 450ms; /* level 2: sections, cards, staggered rows */
+  --dur-large: 700ms;  /* level 1: hero, showcase, image reveals */
+
   /* Animation language (anim guide §1, §31): interactions 150-300ms,
      reveals 300-500ms. Every token uses the same ease-out curve so no
      screen feels like it was animated by a different person. */
@@ -59,6 +68,10 @@
   --animate-slide-down: slide-down 0.3s var(--ease-out-quint) backwards;
   --animate-slide-right: slide-right 0.35s var(--ease-out-quint) backwards;
   --animate-page-in: page-in 0.32s var(--ease-out-quint) backwards;
+  /* Level 1 entrance (interactive layer §38): the same fade-up silhouette,
+     travelled further and slower, for the hero and the one showcase that
+     opens the page. Level 2 stays on --animate-fade-up above. */
+  --animate-rise: rise 0.6s var(--ease-out-quint) backwards;
   --animate-toast-in: toast-in 0.32s var(--ease-out-quint) backwards;
   --animate-toast-out: toast-out 0.22s ease-in both;
   --animate-float: float 7s ease-in-out infinite;
@@ -167,6 +180,50 @@
 }
 @keyframes ui-spin {
   to { transform: rotate(360deg); }
+}
+/* Level 1 entrance (interactive layer §4): 28px instead of 18px, so the hero
+   reads as a bigger step than the sections under it without a new easing. */
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, 28px, 0); }
+  to { opacity: 1; transform: none; }
+}
+/* Template image settle (§9): the picture arrives a touch wide and lands on
+   its frame as the card is revealed. Ends on `transform: none` and runs with
+   `backwards` fill, so once it is over the image falls back to its own styles
+   and the hover zoom still works. */
+@keyframes image-in {
+  from { opacity: 0; transform: scale(1.07); }
+  to { opacity: 1; transform: none; }
+}
+/* "How it works" connector (§17) -- draws left to right, one line, once. */
+@keyframes draw-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+/* Hero preview drift (§5, §22). Three shapes, three speeds, three phases, so the
+   cluster breathes instead of pulsing in unison. Amplitudes are single-digit
+   pixels/degrees on purpose: anything larger reads as wobble.
+
+   §22 asks for movement that is not simply "up, down, up, down", so each shape
+   now carries a second axis and a breath, and the middle stops are deliberately
+   uneven -- the eye reads an irregular path as alive and a perfect sine as
+   machinery. */
+@keyframes drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  26% { transform: translate3d(2px, -9px, 0) scale(1.006); }
+  58% { transform: translate3d(-3px, -4px, 0) scale(0.997); }
+  81% { transform: translate3d(1px, -6px, 0) scale(1.003); }
+}
+@keyframes drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  34% { transform: translate3d(7px, -5px, 0) rotate(-0.8deg); }
+  67% { transform: translate3d(2px, 3px, 0) rotate(0.5deg); }
+}
+@keyframes drift-c {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  29% { transform: translate3d(-5px, -8px, 0) rotate(1.4deg) scale(1.004); }
+  63% { transform: translate3d(4px, -2px, 0) rotate(-0.7deg) scale(0.997); }
+  85% { transform: translate3d(-2px, -6px, 0) rotate(0.6deg) scale(1.002); }
 }
 
 /* ============================================================
@@ -551,6 +608,13 @@
   .ui-navlink:hover { color: var(--color-brand-700); }
   .ui-navlink:hover::after { transform: scaleX(1); transform-origin: left; }
 
+  /* Active route (interactive layer §23): the underline that used to be a
+     hover-only affordance is also the current-page marker, so switching pages
+     slides it across instead of popping a new highlight in. Same gradient,
+     same curve -- the indicator never jumps. */
+  .ui-navlink.is-active { color: var(--color-brand-700); font-weight: 600; }
+  .ui-navlink.is-active::after { transform: scaleX(1); transform-origin: left; }
+
   /* --- Loading skeleton ---------------------------------------- */
   .ui-skeleton {
     background-image: linear-gradient(
@@ -584,18 +648,22 @@
    Anim guide §10: ~50ms between cards and a short total, so a grid is
    still readable and clickable while the last row is settling in. */
 .stagger > * {
-  animation: fade-up 0.45s var(--ease-out-quint) backwards;
+  animation: fade-up var(--dur-reveal) var(--ease-out-quint) backwards;
 }
-.stagger > *:nth-child(1) { animation-delay: 0s; }
-.stagger > *:nth-child(2) { animation-delay: 0.05s; }
-.stagger > *:nth-child(3) { animation-delay: 0.1s; }
-.stagger > *:nth-child(4) { animation-delay: 0.15s; }
-.stagger > *:nth-child(5) { animation-delay: 0.2s; }
-.stagger > *:nth-child(6) { animation-delay: 0.25s; }
-.stagger > *:nth-child(7) { animation-delay: 0.3s; }
-.stagger > *:nth-child(8) { animation-delay: 0.35s; }
-.stagger > *:nth-child(9) { animation-delay: 0.4s; }
-.stagger > *:nth-child(10) { animation-delay: 0.45s; }
+/* `--stag-start` pushes the WHOLE row back in the sequence -- the hero's
+   category chips land after its CTA, a detail-page thumbnail strip after its
+   preview (interactive layer §1). It defaults to 0s, so every grid that
+   exists today animates at exactly the moment it did before. */
+.stagger > *:nth-child(1) { animation-delay: calc(var(--stag-start, 0s) + 0s); }
+.stagger > *:nth-child(2) { animation-delay: calc(var(--stag-start, 0s) + 0.05s); }
+.stagger > *:nth-child(3) { animation-delay: calc(var(--stag-start, 0s) + 0.1s); }
+.stagger > *:nth-child(4) { animation-delay: calc(var(--stag-start, 0s) + 0.15s); }
+.stagger > *:nth-child(5) { animation-delay: calc(var(--stag-start, 0s) + 0.2s); }
+.stagger > *:nth-child(6) { animation-delay: calc(var(--stag-start, 0s) + 0.25s); }
+.stagger > *:nth-child(7) { animation-delay: calc(var(--stag-start, 0s) + 0.3s); }
+.stagger > *:nth-child(8) { animation-delay: calc(var(--stag-start, 0s) + 0.35s); }
+.stagger > *:nth-child(9) { animation-delay: calc(var(--stag-start, 0s) + 0.4s); }
+.stagger > *:nth-child(10) { animation-delay: calc(var(--stag-start, 0s) + 0.45s); }
 
 /* Anim guide §9 -- "sections can animate into view when the user scrolls".
    Without this, a below-the-fold grid plays its whole reveal on mount, to an
@@ -758,6 +826,413 @@
 }
 
 /* ============================================================
+   PREMIUM INTERACTIVE LAYER
+   The experience pass (spec §37-§40), built from the same tokens as
+   everything above: one easing, four durations, three levels.
+
+     LEVEL 1 -- hero, showcase, major CTA  -> --animate-rise / .reveal
+     LEVEL 2 -- sections, cards, categories -> fade-up + .stagger
+     LEVEL 3 -- buttons, icons, inputs      -> fade-in 0.22s / .ui-press
+
+   Nothing here starts a JavaScript animation loop (§34): every effect
+   below is a transition on transform/opacity, or a keyframe held by the
+   same IntersectionObserver that already drives .stagger.
+   ============================================================ */
+
+/* --- Scroll storytelling (§10, §11) ------------------------------
+   `.reveal` is the single-element twin of `.stagger`: one observer
+   (lib/reveal.js), one rule -- only what is still below the fold is
+   held, anything already on screen animates at mount, and the observer
+   always answers on its first frame, so content can never be stranded
+   at opacity 0. */
+.reveal {
+  animation: fade-up var(--dur-reveal) var(--ease-out-quint) backwards;
+}
+.reveal.will-reveal {
+  animation: none;
+  opacity: 0;
+  transform: translate3d(0, 26px, 0) scale(0.985);
+}
+
+/* A child with an entrance of its own -- an image settling into its frame
+   (§9) or a connector drawing itself (§17) -- waits inside a held
+   container instead of spending itself off screen. Dropping
+   `.will-reveal` restarts it with its delay intact, on the frame the
+   container arrives. */
+.will-reveal .reveal-img img,
+.will-reveal .draw-line {
+  animation: none;
+}
+
+/* --- Template image reveal (§9): arrives wide, lands on frame ---- */
+.reveal-img img {
+  animation: image-in var(--dur-large) var(--ease-out-quint) backwards;
+}
+
+/* --- "How it works" connector (§17): one line, drawn once -------- */
+.draw-line {
+  transform-origin: left center;
+  animation: draw-x var(--dur-large) var(--ease-out-quint) 0.35s backwards;
+}
+
+/* --- Card hover overlay (§7) -------------------------------------
+   Pointer-gated exactly like `.ui-card--hover`: on a touch screen
+   :hover sticks after the tap that opened the link, and a scrim left
+   down would dim the whole catalogue. Keyboard focus raises it too
+   (§43) -- a hover-only affordance is invisible to Tab. */
+.card-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.9rem;
+  background: linear-gradient(
+    to top,
+    rgb(15 23 42 / 0.6),
+    rgb(15 23 42 / 0.12) 46%,
+    transparent 72%
+  );
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-out-quint);
+}
+.card-overlay__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.94);
+  box-shadow: var(--shadow-soft);
+  color: var(--color-ink-900);
+  padding: 0.35rem 0.8rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    transform var(--dur-base) var(--ease-out-quint),
+    opacity var(--dur-base) var(--ease-out-quint);
+}
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .card-overlay { opacity: 1; }
+  .group:hover .card-overlay__cta { opacity: 1; transform: none; }
+}
+.group:focus-within .card-overlay { opacity: 1; }
+.group:focus-within .card-overlay__cta { opacity: 1; transform: none; }
+
+/* --- Hero depth layers (§5, §6, §40) -----------------------------
+   Two stacked transforms on purpose. The OUTER element carries the
+   pointer parallax -- a few pixels, written as one custom property on
+   the hero root -- and the INNER one carries the idle drift. Splitting
+   them is what keeps them from fighting: an animation always beats an
+   author declaration, so a single element could never do both. */
+.hero-depth {
+  transform: translate3d(
+    calc(var(--px, 0) * var(--depth, 6px)),
+    calc(var(--py, 0) * var(--depth, 6px)),
+    0
+  );
+  transition: transform 0.5s var(--ease-out-quint);
+}
+.hero-float { animation: drift-a 8s ease-in-out 0.9s infinite; }
+.hero-float--b {
+  animation-name: drift-b;
+  animation-duration: 10s;
+  animation-delay: 1.3s;
+}
+.hero-float--c {
+  animation-name: drift-c;
+  animation-duration: 12s;
+  animation-delay: 1.7s;
+}
+
+/* --- The hero keeps going after the opening (§18) --------------
+   One number, written by the same rAF-throttled scroll reader that
+   already serves the pointer: how far the page has travelled through
+   the hero, 0 to 1. The cluster drifts up and away as it goes, and
+   the backdrop thins out, so leaving the hero feels like a camera
+   move rather than a cut to the next section. Both read the same
+   property, so it is still one style write per frame. */
+.hero-drift {
+  transform: translate3d(0, calc(var(--sy, 0) * -22px), 0);
+  will-change: transform;
+}
+
+.hero-backdrop {
+  opacity: calc(1 - var(--sy, 0) * 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-drift,
+  .hero-backdrop {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* --- Cursor light (§22) ------------------------------------------
+   A single composited layer moved with `transform` -- never a repaint
+   of a gradient the size of the hero (§34). Switched off on touch and
+   whenever the OS asks for reduced motion: a light chasing the pointer
+   is exactly the continuous motion §36 removes. */
+.hero-light {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 34rem;
+  height: 34rem;
+  margin: -17rem 0 0 -17rem;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle at center,
+    rgb(99 102 241 / 0.16),
+    rgb(147 51 234 / 0.07) 42%,
+    transparent 68%
+  );
+  transform: translate3d(var(--cx, 50%), var(--cy, 40%), 0);
+  transition: transform 0.5s var(--ease-out-quint);
+  will-change: transform;
+  pointer-events: none;
+}
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .hero-light { display: none; }
+}
+
+/* --- Horizontal showcase (§18) -----------------------------------
+   The ONE rail on the site, and it owns its own scrolling: the page
+   keeps its vertical wheel (no hijack), a touch swipe moves the rail
+   natively, and focusing a card scrolls it into view for keyboard
+   users. Snap stops a card half-way; the scrollbar is hidden because
+   the heading carries real prev/next controls. Scroll padding is set
+   in the markup so it tracks the rail's own responsive inset. */
+.ui-rail {
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ui-rail::-webkit-scrollbar { display: none; }
+.ui-rail > * { scroll-snap-align: start; }
+
+/* --- Level 3 press feedback (§32) --------------------------------
+   For chips and tabs that are not `.ui-btn`. `scale` rather than
+   `transform`, so it composes with whatever translate/rotate the
+   element already has instead of replacing it mid-press. */
+.ui-press {
+  transition:
+    scale var(--dur-fast) var(--ease-out-quint),
+    transform var(--dur-fast) var(--ease-out-quint),
+    background-color var(--dur-base) ease,
+    border-color var(--dur-base) ease,
+    color var(--dur-base) ease,
+    box-shadow var(--dur-base) var(--ease-out-quint);
+}
+.ui-press:active { scale: 0.96; }
+
+/* ============================================================
+   THE OPENING -- the homepage introduces itself (spec §1-§9,
+   §19, §24-§30).
+
+   One fixed layer, four keyframes, 1.45 seconds: the word
+   arrives oversized, the camera pulls back, the environment
+   grows around it, and the word lands on the navbar brand
+   and is gone. The hero's own beats take over from 1.5s
+   (§30) and the page is fully interactive by 2.9s.
+
+   It is a stage, not a gate: `pointer-events: none` so not
+   one click is ever stolen, and any wheel, swipe or key
+   press ends it early (§16). Transform, opacity and a
+   deliberate 10px of blur are the only things that move --
+   no width, no height, no layout work (§26).
+   ============================================================ */
+
+/* How far the opening type has to shrink to become the navbar
+   wordmark. The stage sets it in vw and the navbar sets it in
+   px, so the ratio is one number per breakpoint -- settled in
+   CSS, never measured in JavaScript. */
+:root {
+  --intro-end-scale: 0.3;
+}
+@media (min-width: 420px) {
+  :root {
+    --intro-end-scale: 0.24;
+  }
+}
+@media (min-width: 640px) {
+  :root {
+    --intro-end-scale: 0.15;
+  }
+}
+@media (min-width: 900px) {
+  :root {
+    --intro-end-scale: 0.1;
+  }
+}
+@media (min-width: 1200px) {
+  :root {
+    --intro-end-scale: 0.075;
+  }
+}
+@media (min-width: 1600px) {
+  :root {
+    --intro-end-scale: 0.055;
+  }
+}
+
+.intro-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.intro-veil,
+.intro-grid {
+  position: absolute;
+  inset: 0;
+}
+
+/* The clean viewport: white, and the last thing to let go. */
+.intro-veil {
+  background: var(--color-white);
+  animation: intro-veil 1450ms var(--ease-out-quint) both;
+}
+
+/* The world arriving behind the type -- a quiet grid, warmed by one glow. */
+.intro-grid {
+  background-image:
+    linear-gradient(to right, rgb(99 102 241 / 0.14) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(99 102 241 / 0.14) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at 50% 42%, #000, transparent 70%);
+  animation: intro-grow 1450ms var(--ease-out-quint) both;
+}
+
+.intro-glow {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 64rem;
+  height: 64rem;
+  margin: -32rem 0 0 -32rem;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle at center,
+    rgb(99 102 241 / 0.26),
+    rgb(147 51 234 / 0.1) 46%,
+    transparent 70%
+  );
+  animation: intro-grow 1450ms var(--ease-out-quint) 100ms both;
+}
+
+.intro-word {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden; /* §27: oversized type can never widen the page */
+  font-size: 16vw;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  color: var(--color-ink-900);
+  white-space: nowrap;
+  will-change: transform, opacity, filter;
+  animation: intro-word 1450ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes intro-word {
+  0% {
+    opacity: 0;
+    transform: scale(1.12);
+    filter: blur(10px);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(6px);
+    /* §19: the word's centre sits at 50vw/50vh, the navbar brand at
+       72px/36px -- so this translate is the exact journey between them,
+       at any width, and the scale does the shrinking. */
+    transform: translate(calc(72px - 50vw), calc(36px - 50vh))
+      scale(var(--intro-end-scale));
+  }
+}
+
+@keyframes intro-veil {
+  0%,
+  58% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes intro-grow {
+  0% {
+    opacity: 0;
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.9;
+  }
+}
+
+/* --- The hero beats (§8-§14) ---------------------------------
+   One entrance, reused: opacity, a rise, a touch of scale and
+   a deliberate blur. Each element carries its own delay from the
+   hero's clock, which is what makes it read as a single
+   choreography instead of a pile of fades (§11, §32). The
+   custom properties let the search field arrive smaller and the
+   buttons arrive crisper, without a second keyframe. */
+.line-rise {
+  /* `backwards`, not `both`: it holds the from-state through the delay, and
+     then hands the element back to its own styles. With `forwards` the
+     animation's `transform: none` would keep outranking the author's -- and
+     the hero cluster, which also carries the scroll drift (§18), would be
+     frozen in place for the rest of the page. */
+  animation: line-rise var(--dur-reveal) var(--ease-out-quint) backwards;
+}
+
+@keyframes line-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise-y, 0.5em)) scale(var(--rise-scale, 0.97));
+    filter: blur(var(--rise-blur, 10px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+/* §9: each headline line gets its own moment. The mask is what
+   makes the word rise out of nothing instead of fade in place. */
+.hero-line {
+  display: block;
+  overflow: hidden;
+}
+
+.hero-line > span {
+  display: block;
+}
+
+/* ============================================================
    ACCESSIBILITY -- respect the OS "reduce motion" setting
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
@@ -770,6 +1245,13 @@
     transition-duration: 0.001ms !important;
     transition-delay: 0s !important;
     scroll-behavior: auto !important;
+  }
+
+  /* §16/§28: the opening is the one thing reduced motion removes
+     outright. The hero beats above already collapse to a plain fade
+     through the blanket rule -- there is no camera move to keep. */
+  .intro-stage {
+    display: none;
   }
 
   /* Everything above snaps to its end state instantly. Reveals use

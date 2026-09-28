@@ -229,8 +229,11 @@ export default function TemplateDetails() {
 
         <div className="grid gap-8 lg:grid-cols-[1.65fr_1fr]">
           {/* ------------------------------------------------ media */}
+          {/* §25: the preview arrives first, the strip follows a beat later,
+              and everything further down reveals as the visitor scrolls --
+              one column, one curve, nothing waiting longer than 200ms. */}
           <section aria-label="Screenshots">
-            <div className="ui-card overflow-hidden !p-0">
+            <div className="ui-card reveal overflow-hidden !p-0">
               <div className="relative aspect-[16/10] bg-ink-100">
                 {/* The screenshot itself opens the lightbox (anim guide §23). */}
                 {activeImage ? (
@@ -241,13 +244,13 @@ export default function TemplateDetails() {
                       setLightboxOpen(true);
                     }}
                     aria-label={`View ${template.title} screenshot ${activeShot + 1} fullscreen`}
-                    className="absolute inset-0 block h-full w-full cursor-zoom-in overflow-hidden"
+                    className="group absolute inset-0 block h-full w-full cursor-zoom-in overflow-hidden"
                   >
                     <img
                       key={activeImage}
                       src={mediaUrl(activeImage)}
                       alt={`${template.title} screenshot ${activeShot + 1}`}
-                      className="h-full w-full object-cover animate-fade-in"
+                      className="h-full w-full animate-fade-in object-cover transition-transform duration-500 ease-out group-hover:scale-[1.02]"
                     />
                   </button>
                 ) : (
@@ -266,7 +269,7 @@ export default function TemplateDetails() {
             </div>
 
             {shots.length > 1 && (
-              <div className="stagger mt-3 flex flex-wrap gap-3">
+              <div className="stagger mt-3 flex flex-wrap gap-3" style={{ '--stag-start': '120ms' }}>
                 {shots.map((src, i) => (
                   <button
                     key={src + i}
@@ -286,7 +289,7 @@ export default function TemplateDetails() {
               </div>
             )}
 
-            <section className="mt-8" aria-labelledby="about-heading">
+            <section className="reveal mt-8" aria-labelledby="about-heading" style={{ animationDelay: '60ms' }}>
               <h2 id="about-heading" className="ui-title text-xl">
                 About this template
               </h2>
@@ -296,7 +299,7 @@ export default function TemplateDetails() {
             </section>
 
             {template.technologies?.length > 0 && (
-              <section className="mt-7" aria-labelledby="tech-heading">
+              <section className="reveal mt-7" aria-labelledby="tech-heading" style={{ animationDelay: '90ms' }}>
                 <h2 id="tech-heading" className="ui-title text-xl">
                   Built with
                 </h2>
@@ -315,7 +318,7 @@ export default function TemplateDetails() {
               </section>
             )}
             {template.tags?.length > 0 && (
-              <section className="mt-7" aria-labelledby="tags-heading">
+              <section className="reveal mt-7" aria-labelledby="tags-heading" style={{ animationDelay: '60ms' }}>
                 <h2 id="tags-heading" className="ui-title text-xl">
                   Tags
                 </h2>
@@ -341,7 +344,7 @@ export default function TemplateDetails() {
                 or absent changelog renders nothing -- a section heading over
                 a blank list tells the visitor less than no section at all. */}
             {template.changelog?.length > 0 && (
-              <section className="mt-7" aria-labelledby="changelog-heading">
+              <section className="reveal mt-7" aria-labelledby="changelog-heading" style={{ animationDelay: '60ms' }}>
                 <h2 id="changelog-heading" className="ui-title text-xl">
                   Changelog
                 </h2>
@@ -392,7 +395,11 @@ export default function TemplateDetails() {
               ~200px at desktop. Letting it shrink is what makes the ellipsis
               inside actually do its job. */}
           <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
-            <div className="ui-card p-6 animate-fade-up">
+            {/* §25: the right column lands a beat after the preview, and its
+                three stages inside -- facts, then the developer, then the
+                download -- cascade in that order. Longest wait on the page is
+                320ms; the button is interactive from the first frame. */}
+            <div className="ui-card reveal p-6" style={{ animationDelay: '140ms' }}>
               <h1 className="text-2xl font-extrabold leading-tight tracking-tight text-ink-900">
                 {template.title}
               </h1>
@@ -401,7 +408,7 @@ export default function TemplateDetails() {
                   download. Every value is whatever the developer supplied --
                   nothing here is derived or assumed, and a missing licence
                   reads as missing (§32) rather than defaulting to "MIT". */}
-              <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-y border-ink-100 py-5 text-sm">
+              <dl className="mt-5 grid grid-cols-2 animate-fade-up gap-x-4 gap-y-4 border-y border-ink-100 py-5 text-sm [animation-delay:260ms]">
                 <Meta label="Category">
                   <Link
                     to={`/templates?filter=${encodeURIComponent(template.category)}`}
@@ -465,7 +472,7 @@ export default function TemplateDetails() {
               </div>
 
               {/* actions */}
-              <div className="mt-6 space-y-2.5">
+              <div className="mt-6 animate-fade-up space-y-2.5 [animation-delay:360ms]">
                 {/* Download -> Downloading... -> Downloaded (anim guide §16).
                     Full-width, so the longer labels never shift the card. */}
                 <button

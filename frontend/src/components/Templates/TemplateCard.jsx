@@ -4,13 +4,35 @@ import { mediaUrl, formatCount } from '../../lib/format';
 import { useSession } from '../../lib/session';
 import { useFavorite } from '../../lib/favorites';
 import { downloadTemplate } from '../../lib/download';
+import { tiltHandlers } from '../../lib/motion';
 import { useToast } from '../Common/Toast';
+
+/* Spec §8: tilt is a reward for the two cards that carry the page, never a
+   property of every card in the grid -- one shared pair of handlers, since
+   they only read `event.currentTarget`. */
+const TILT = tiltHandlers(2, 3);
 
 /**
  * One template in a grid (spec §8): thumbnail, name, short description, category,
  * technologies, developer, download count and details / preview / download buttons.
+ *
+ * The interactive layer adds three OPTIONAL props -- nothing existing calls
+ * them, so every grid that shipped before still renders byte-for-byte the same
+ * markup with the same defaults:
+ *   badge    a small chip over the image (the trending row's real "Trending"
+ *            label -- it is the list the row came from, not a score),
+ *   featured the primary card of the featured section: larger title, taller
+ *            preview, its own entrance,
+ *   tilt     pointer-driven 3D (±2deg/±3deg), used on that primary card only.
  */
-export default function TemplateCard({ template, onDownloaded, onFavoriteChange }) {
+export default function TemplateCard({
+  template,
+  onDownloaded,
+  onFavoriteChange,
+  badge,
+  featured = false,
+  tilt = false,
+}) {
   const { isAuthenticated } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
@@ -54,10 +76,17 @@ export default function TemplateCard({ template, onDownloaded, onFavoriteChange 
   const authorId = template.author?._id ?? template.author;
 
   return (
-    <article className="ui-card ui-card--hover group relative flex flex-col overflow-hidden">
+    <article
+      className={`ui-card ui-card--hover group relative flex flex-col overflow-hidden${
+        featured ? ' shadow-lift' : ''
+      }`}
+      {...(tilt ? TILT : null)}
+    >
       <Link
         to={`/templates/${template.slug}`}
-        className="relative block aspect-[16/10] overflow-hidden bg-ink-100"
+        className={`reveal-img relative block overflow-hidden bg-ink-100 ${
+          featured ? 'aspect-[16/10] lg:aspect-[16/9]' : 'aspect-[16/10]'
+        }`}
         aria-label={`View ${template.title}`}
       >
         <img
@@ -66,8 +95,24 @@ export default function TemplateCard({ template, onDownloaded, onFavoriteChange 
           loading="lazy"
           className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
         />
-        <span className="absolute left-3 top-3 rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-700 shadow-soft backdrop-blur">
-          {template.category}
+        {/* §7: the overlay reveal. Decorative and pointer-events-free -- the
+            card is one link, and the pill below merely says where it goes. */}
+        <span className="card-overlay" aria-hidden="true">
+          <span className="card-overlay__cta">
+            View details <span aria-hidden>→</span>
+          </span>
+        </span>
+        {/* Category and (optionally) the row's own badge share one slot, so a
+            trending label can never land on top of the overlay's CTA. */}
+        <span className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+          {badge && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white shadow-soft">
+              <span aria-hidden>↑</span> {badge}
+            </span>
+          )}
+          <span className="rounded-full bg-white/92 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-brand-700 shadow-soft backdrop-blur">
+            {template.category}
+          </span>
         </span>
         {(template.downloadCount || 0) > 0 && (
           <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-ink-900/70 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur">
@@ -101,12 +146,20 @@ export default function TemplateCard({ template, onDownloaded, onFavoriteChange 
 
       <div className="flex flex-1 flex-col p-4">
         <Link to={`/templates/${template.slug}`}>
-          <h3 className="ui-title text-base leading-snug transition-colors group-hover:text-brand-700">
+          <h3
+            className={`ui-title leading-snug transition-colors group-hover:text-brand-700 ${
+              featured ? 'text-lg sm:text-xl' : 'text-base'
+            }`}
+          >
             {template.title}
           </h3>
         </Link>
 
-        <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-ink-500">
+        <p
+          className={`mt-1.5 text-sm leading-relaxed text-ink-500 ${
+            featured ? 'line-clamp-3' : 'line-clamp-2'
+          }`}
+        >
           {template.description}
         </p>
 

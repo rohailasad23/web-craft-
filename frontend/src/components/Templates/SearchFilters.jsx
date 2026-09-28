@@ -54,10 +54,13 @@ export default function SearchFilters({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
+        {/* §28: the field answers focus -- the row lifts a hair and the icon
+            takes the brand colour -- with no layout shift, because only a
+            transform moves. */}
+        <div className="group relative flex-1 transition-transform duration-300 focus-within:-translate-y-0.5">
           <span
             aria-hidden
-            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-500"
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-500 transition-colors duration-300 group-focus-within:text-brand-600"
           >
             🔍
           </span>
@@ -117,7 +120,7 @@ export default function SearchFilters({
               type="button"
               onClick={() => patch({ filter: entry })}
               aria-pressed={active}
-              className={`rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-all duration-300 ${
+              className={`ui-press rounded-full border px-3.5 py-1.5 text-sm font-semibold ${
                 active
                   ? 'border-brand-600 bg-brand-600 text-white shadow-soft'
                   : 'border-ink-200 bg-white text-ink-700 hover:-translate-y-0.5 hover:border-brand-300 hover:text-brand-700'

@@ -9,6 +9,11 @@ import { useEffect } from 'react';
  * section simply appears already settled. This hook fixes that without ever
  * putting content at risk of staying invisible:
  *
+ * Two selectors share the one rule: `.stagger` holds a grid whose CHILDREN
+ * stagger, `.reveal` holds a single block (a section heading, a panel) that
+ * animates as one unit -- the interactive layer's scroll-storytelling twin,
+ * registered here so there is no second reveal system to keep in step.
+ *
  *  1. Only containers whose top is still below the fold get `.will-reveal`
  *     (which stops their children animating and holds them at opacity 0).
  *     Anything already on screen is left completely alone and animates on
@@ -46,14 +51,16 @@ export default function useScrollReveal() {
     const scan = () => {
       frame = 0;
       const viewport = window.innerHeight;
-      document.querySelectorAll('.stagger:not([data-reveal])').forEach((el) => {
-        el.setAttribute('data-reveal', '1');
-        // Below the fold? Hold it. In view? Never touch it.
-        if (el.getBoundingClientRect().top > viewport) {
-          el.classList.add('will-reveal');
-          observer.observe(el);
-        }
-      });
+      document
+        .querySelectorAll('.stagger:not([data-reveal]), .reveal:not([data-reveal])')
+        .forEach((el) => {
+          el.setAttribute('data-reveal', '1');
+          // Below the fold? Hold it. In view? Never touch it.
+          if (el.getBoundingClientRect().top > viewport) {
+            el.classList.add('will-reveal');
+            observer.observe(el);
+          }
+        });
     };
     const schedule = () => {
       if (frame) return;
@@ -72,9 +79,11 @@ export default function useScrollReveal() {
       observer.disconnect();
       // Nothing survives navigation anyway, but leave no state behind that a
       // future scan would mistake for "already handled".
-      document.querySelectorAll('.stagger[data-reveal]').forEach((el) => {
-        el.removeAttribute('data-reveal');
-      });
+      document
+        .querySelectorAll('.stagger[data-reveal], .reveal[data-reveal]')
+        .forEach((el) => {
+          el.removeAttribute('data-reveal');
+        });
     };
   }, []);
 }

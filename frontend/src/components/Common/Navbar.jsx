@@ -45,6 +45,23 @@ export default function Navbar() {
   const [open, setOpen] = useState(false);
   const navRef = useRef(null);
 
+  // Spec §23: the bar settles from "open" (a wash of white over the hero) to
+  // "elevated" (border + shadow) the moment the page scrolls under it. The
+  // listener only flips a boolean that changes twice per scroll -- React bails
+  // out when the value is unchanged, so a scroll through a long page costs no
+  // re-renders at all, and there is no transform on the bar to make it jump.
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const next = window.scrollY > 8;
+      setScrolled((prev) => (prev === next ? prev : next));
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   // Publish the nav's real height as --nav-h. Viewport-fit screens (the auth
   // forms) subtract it from 100dvh, so anything that changes it -- a wider
   // label set, text zoom, the mobile drawer opening -- is picked up instead
@@ -81,7 +98,8 @@ export default function Navbar() {
     navigate('/login', { replace: true });
   };
 
-  const linkCls = (to) => `ui-navlink ${location.pathname === to ? '!text-brand-700 font-semibold' : ''}`;
+  const linkCls = (to) =>
+    `ui-navlink ${location.pathname === to ? 'is-active' : ''}`;
 
   const brand = (
     <Link to="/" aria-label="web craft — home" className="group flex shrink-0 items-center gap-2.5">
@@ -141,7 +159,11 @@ export default function Navbar() {
       // footer: an unnamed <nav> is announced as just "navigation" and gives
       // a screen-reader user four navs with no way to tell them apart.
       aria-label="Main"
-      className="sticky top-0 z-40 animate-slide-down border-b border-ink-100 bg-white/85 backdrop-blur-md supports-[backdrop-filter]:bg-white/70"
+      className={`sticky top-0 z-40 animate-slide-down border-b transition-[background-color,box-shadow,border-color] duration-300 ease-out backdrop-blur-md ${
+        scrolled
+          ? 'border-ink-100 bg-white/92 shadow-soft supports-[backdrop-filter]:bg-white/80'
+          : 'border-white/60 bg-white/70 supports-[backdrop-filter]:bg-white/55'
+      }`}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5 sm:px-6">
         {brand}
