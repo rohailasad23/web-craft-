@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import BrandLogo from './BrandLogo';
 
 const GROUPS = [
   {
@@ -33,10 +34,7 @@ export default function Footer() {
       <div className="mx-auto grid max-w-7xl gap-10 px-5 py-12 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
         <div>
           <Link to="/" className="inline-flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 text-base shadow-soft">
-              🧩
-            </span>
-            <span className="text-lg font-extrabold tracking-tight text-ink-900">web craft</span>
+            <BrandLogo size={36} wordClassName="text-lg" />
           </Link>
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-ink-500">
             Ready-made website templates for developers and creators. Discover, preview, download

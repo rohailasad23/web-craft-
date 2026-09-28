@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { BrandMark } from './BrandLogo';
 
 /**
  * The opening.
@@ -42,19 +43,24 @@ export default function CinematicIntro({ onDone }) {
       <div className="intro-grid" />
       <div className="intro-glow" />
 
-      <div className="intro-word">
-        {Array.from(WORDMARK).map((char, i) => (
-          <span
-            key={`${char}-${i}`}
-            // How far this letter sits from the middle one. CSS turns that
-            // number into the delay, so the wordmark resolves outward from
-            // its centre without a single line of timing logic here.
-            className="intro-letter"
-            style={{ '--d': String(Math.abs(i - middle)) }}
-          >
-            {char === ' ' ? '\u00a0' : char}
-          </span>
-        ))}
+      {/* Mark above, name below -- the same lockup the navbar shows, so the
+          closing flight lands on the real thing rather than near it. */}
+      <div className="intro-lockup">
+        <BrandMark size={180} sparkle={false} className="intro-mark" />
+        <div className="intro-word">
+          {Array.from(WORDMARK).map((char, i) => (
+            <span
+              key={`${char}-${i}`}
+              // How far this letter sits from the middle one. CSS turns that
+              // number into the delay, so the wordmark resolves outward from
+              // its centre without a single line of timing logic here.
+              className="intro-letter"
+              style={{ '--d': String(Math.abs(i - middle)) }}
+            >
+              {char === ' ' ? '\u00a0' : char}
+            </span>
+          ))}
+        </div>
       </div>
 
       <p className="intro-signoff">

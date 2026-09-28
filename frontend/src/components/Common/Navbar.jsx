@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../../lib/session';
 import { initials } from '../../lib/format';
 import NotificationBell from './NotificationBell';
+import { BrandMark, BrandWord } from './BrandLogo';
 
 const BASE_LINKS = [
   { to: '/', label: 'Home' },
@@ -103,15 +104,16 @@ export default function Navbar() {
 
   const brand = (
     <Link to="/" aria-label="web craft — home" className="group flex shrink-0 items-center gap-2.5">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-sm shadow-soft transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110">
-        🧩
-      </span>
+      <BrandMark
+        size={32}
+        className="transition-transform duration-300 ease-out group-hover:-rotate-6 group-hover:scale-105"
+      />
       {/* Below 400px the corner keeps the mark, Login and Sign up and lets
           the menu carry the labels -- fitting the full wordmark too would
           push the hamburger past the viewport (and `overflow-clip` on the
           shell would silently cut it off). */}
-      <span className="text-lg font-extrabold tracking-tight text-ink-900 max-[399px]:hidden">
-        web craft
+      <span className="max-[399px]:hidden">
+        <BrandWord />
       </span>
     </Link>
   );
